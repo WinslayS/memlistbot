@@ -2,6 +2,7 @@ import json
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.types import Message
 
 TOKEN = "ТОКЕН_ОТ_BOTFATHER"
 DATA_FILE = "members.json"
@@ -13,7 +14,7 @@ def load_members():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except FileNotFoundError:
         return []
 
 def save_members(members):
@@ -21,11 +22,11 @@ def save_members(members):
         json.dump(members, f, ensure_ascii=False, indent=2)
 
 @dp.message(Command("start"))
-async def start(message: types.Message):
+async def start(message: Message):
     await message.answer("👋 Привет! Напиши /join чтобы записаться, или /list чтобы увидеть список.")
 
 @dp.message(Command("join"))
-async def join(message: types.Message):
+async def join(message: Message):
     members = load_members()
     user = {
         "id": message.from_user.id,
@@ -41,7 +42,7 @@ async def join(message: types.Message):
         await message.answer("Ты уже есть в списке 🙂")
 
 @dp.message(Command("list"))
-async def show_list(message: types.Message):
+async def show_list(message: Message):
     members = load_members()
     if not members:
         await message.answer("Список пока пуст 🕳️")
@@ -49,7 +50,7 @@ async def show_list(message: types.Message):
 
     text = "📋 <b>Список участников:</b>\n\n"
     for i, m in enumerate(members, start=1):
-        if m["username"]:
+        if m.get("username"):
             text += f"{i}. @{m['username']}\n"
         else:
             text += f"{i}. {m['name']} (без @)\n"
