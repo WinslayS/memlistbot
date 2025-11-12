@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message
 
-TOKEN = "ТОКЕН_ОТ_BOTFATHER"
+TOKEN = "8559168291:AAHTWpAoSD1rtKHkCXWcIvcvSLPCBJpD0CM"
 DATA_FILE = "members.json"
 
 bot = Bot(token=TOKEN)
