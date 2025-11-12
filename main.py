@@ -27,15 +27,19 @@ def save_members(members):
 
 @dp.message(Command("start"))
 async def start(message: Message):
-    await message.answer("👋 Привет! Напиши /join чтобы записаться, /list чтобы увидеть список, или /name <твоё имя> чтобы указать своё имя.")
+    await message.answer(
+        "👋 Привет! Напиши /join чтобы записаться, /list чтобы увидеть список, "
+        "или /name <ник> чтобы добавить имя из другого сервиса."
+    )
 
 @dp.message(Command("join"))
 async def join(message: Message):
     members = load_members()
     user = {
         "id": message.from_user.id,
+        "full_name": message.from_user.full_name,
         "username": message.from_user.username,
-        "custom_name": message.from_user.full_name
+        "external_name": None
     }
 
     if not any(m["id"] == user["id"] for m in members):
@@ -46,10 +50,10 @@ async def join(message: Message):
         await message.answer("Ты уже есть в списке 🙂")
 
 @dp.message(Command("name"))
-async def set_name(message: Message):
+async def set_external_name(message: Message):
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("✍️ Напиши имя после команды. Пример: /name Vitalii")
+        await message.answer("✍️ Напиши имя после команды. Пример: /name DragonHunter")
         return
 
     new_name = args[1]
@@ -58,19 +62,20 @@ async def set_name(message: Message):
 
     for m in members:
         if m["id"] == message.from_user.id:
-            m["custom_name"] = new_name
+            m["external_name"] = new_name
             updated = True
             break
 
     if not updated:
         members.append({
             "id": message.from_user.id,
+            "full_name": message.from_user.full_name,
             "username": message.from_user.username,
-            "custom_name": new_name
+            "external_name": new_name
         })
 
     save_members(members)
-    await message.answer(f"✅ Имя изменено на: <b>{new_name}</b>", parse_mode="HTML")
+    await message.answer(f"✅ Имя из другого сервиса установлено: <b>{new_name}</b>", parse_mode="HTML")
 
 @dp.message(Command("list"))
 async def show_list(message: Message):
@@ -81,9 +86,9 @@ async def show_list(message: Message):
 
     text = "📋 <b>Список участников:</b>\n\n"
     for i, m in enumerate(members, start=1):
-        username = f"@{m['username']}" if m.get("username") else "(без @)"
-        name = m.get("custom_name", "")
-        text += f"{i}. {username} — {name}\n"
+        username = f"(@{m['username']})" if m.get("username") else "(без @)"
+        external = f" - {m['external_name']}" if m.get("external_name") else ""
+        text += f"{i}. {m['full_name']} {username}{external}\n"
 
     await message.answer(text, parse_mode="HTML")
 
