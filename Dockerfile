@@ -1,6 +1,9 @@
-FROM python:3.10
+FROM python:3.10-slim
+
 WORKDIR /app
 COPY . /app
+
 RUN pip install --upgrade pip
-RUN pip install aiogram==2.25.1 aiohttp
+RUN pip install -r requirements.txt
+
 CMD ["python", "main.py"]
