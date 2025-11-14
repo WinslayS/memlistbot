@@ -18,7 +18,7 @@ dp = Dispatcher()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-OWNER_ID = 8523019691  # ← при необходимости замени
+OWNER_ID = 8523019691  # при необходимости замени на свой id
 
 
 # ===============================================================
@@ -53,7 +53,7 @@ def get_members(chat_id):
         supabase.table("members")
         .select("*")
         .eq("chat_id", chat_id)
-        .order("created_at", desc=False)  # ← правильная сортировка
+        .order("created_at", desc=False)  # правильная сортировка
         .execute()
     )
     return response.data
@@ -89,7 +89,7 @@ async def cmd_start(msg: types.Message):
     )
 
 
-@dp.message(Command("join")))
+@dp.message(Command("join"))
 async def cmd_join(msg: types.Message):
     chat_id = msg.chat.id
     user = msg.from_user
@@ -104,7 +104,7 @@ async def cmd_join(msg: types.Message):
     await msg.answer(f"✅ {user.full_name or user.username} добавлен в список!")
 
 
-@dp.message(Command("list")))
+@dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
     chat_id = msg.chat.id
     rows = get_members(chat_id)
@@ -117,13 +117,18 @@ async def cmd_list(msg: types.Message):
 
     for i, row in enumerate(rows, start=1):
         # Имя: external_name > full_name > username
-        name = row.get("external_name") or row.get("full_name") or row.get("username") or "Без имени"
+        name = (
+            row.get("external_name")
+            or row.get("full_name")
+            or row.get("username")
+            or "Без имени"
+        )
         text += f"{i}. {name}\n"
 
     await msg.answer(text, parse_mode="HTML")
 
 
-@dp.message(Command("name")))
+@dp.message(Command("name"))
 async def cmd_name(msg: types.Message):
     chat_id = msg.chat.id
     user = msg.from_user
@@ -140,7 +145,7 @@ async def cmd_name(msg: types.Message):
     await msg.answer(f"✅ Имя из другого сервиса установлено: {name}")
 
 
-@dp.message(Command("remove")))
+@dp.message(Command("remove"))
 async def cmd_remove(msg: types.Message):
     chat_id = msg.chat.id
     user = msg.from_user
@@ -150,7 +155,7 @@ async def cmd_remove(msg: types.Message):
     await msg.answer("🗑 Ты удалён из списка!")
 
 
-@dp.message(Command("clear")))
+@dp.message(Command("clear"))
 async def cmd_clear(msg: types.Message):
     if msg.from_user.id != OWNER_ID:
         await msg.answer("⛔ Только владелец бота может очистить список!")
