@@ -1,9 +1,3 @@
-import os
-print("DEBUG ENV:", os.environ)
-raise SystemExit
-
-
-
 import asyncio
 import os
 from aiogram import Bot, Dispatcher, types
