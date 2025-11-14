@@ -63,17 +63,23 @@ async def cmd_name(message: types.Message):
 
 @dp.message(Command("list"))
 async def cmd_list(message: types.Message):
-    rows = supabase.table("members").select("*").order("created_at", ascending=True).execute().data
+    rows = (
+        supabase.table("members")
+        .select("*")
+        .order("created_at.asc")
+        .execute()
+        .data
+    )
 
     if not rows:
-        await message.answer("Список пока пуст 🕳️")
+        await message.answer("Список пуст 🕳️")
         return
 
     text = "📋 <b>Список участников:</b>\n\n"
-    for i, m in enumerate(rows, start=1):
-        username_display = f"@{m['username']}" if m['username'] else m['fullname']
-        ext = f" - {m['external_name']}" if m['external_name'] else ""
-        text += f"{i}. {username_display}{ext}\n"
+    for i, row in enumerate(rows, start=1):
+        uname = f"@{row['username']}" if row['username'] else row['full_name']
+        ext = f" — {row['external_name']}" if row['external_name'] else ""
+        text += f"{i}. {uname}{ext}\n"
 
     await message.answer(text, parse_mode="HTML")
 
