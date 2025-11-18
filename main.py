@@ -198,7 +198,7 @@ async def cmd_export(msg: types.Message):
     output = io.StringIO()
     writer = csv.writer(output)
 
-    writer.writerow(["№", "Full Name", "Username", "External Name", "User ID"])
+    writer.writerow(["№", "Full Name", "Username", "External Name"])
 
     for i, row in enumerate(rows, start=1):
         writer.writerow([
@@ -206,7 +206,6 @@ async def cmd_export(msg: types.Message):
             row.get("full_name") or "",
             f"@{row['username']}" if row.get("username") else "",
             row.get("external_name") or "",
-            row.get("user_id")
         ])
 
     output.seek(0)
