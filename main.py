@@ -116,14 +116,11 @@ async def cmd_list(msg: types.Message):
     text = "📋 <b>Список участников:</b>\n\n"
 
     for i, row in enumerate(rows, start=1):
-        # Имя: external_name > full_name > username
-        name = (
-            row.get("external_name")
-            or row.get("full_name")
-            or row.get("username")
-            or "Без имени"
-        )
-        text += f"{i}. {name}\n"
+        tg_name = row["full_name"] or "Без имени"
+        username = f"(@{row['username']})" if row["username"] else ""
+        external = f" – {row['external_name']}" if row["external_name"] else ""
+
+        text += f"{i}. {tg_name} {username}{external}\n"
 
     await msg.answer(text, parse_mode="HTML")
 
