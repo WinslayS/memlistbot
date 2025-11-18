@@ -216,7 +216,7 @@ async def cmd_export(msg: types.Message):
 
 # ========== FIND USER ==========
 
-@dp.message(Command("find")))
+@dp.message(Command("find"))
 async def cmd_find(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
