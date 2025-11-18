@@ -134,6 +134,74 @@ async def cmd_name(msg: types.Message):
 
     await msg.answer(f"✅ Имя из другого сервиса установлено: {external_name}")
 
+# ========== ADMIN: SET NAME FOR ANOTHER USER ==========
+
+@dp.message(Command("setname"))
+async def admin_set_name(msg: types.Message):
+    if not is_admin(msg.from_user.id):
+        await msg.answer("⛔ Только администратор может менять имена другим участникам.")
+        return
+
+    args = msg.text.split(maxsplit=2)
+
+    if len(args) < 3:
+        await msg.answer("❗ Формат: /setname @username НовоеИмя\nпример: /setname @vitalii Hunter")
+        return
+
+    target, new_name = args[1], args[2].strip()
+
+    # Убираем @ если есть
+    if target.startswith("@"):
+        target_username = target[1:]
+        target_user_id = None
+    else:
+        target_username = None
+        try:
+            target_user_id = int(target)
+        except:
+            await msg.answer("❌ Ошибка: укажите @username или user_id.")
+            return
+
+    # --- Найдём участника в базе ---
+    if target_username:
+        result = (
+            supabase.table("members")
+            .select("*")
+            .eq("chat_id", msg.chat.id)
+            .eq("username", target_username)
+            .execute()
+        )
+    else:
+        result = (
+            supabase.table("members")
+            .select("*")
+            .eq("chat_id", msg.chat.id)
+            .eq("user_id", target_user_id)
+            .execute()
+        )
+
+    rows = result.data or []
+
+    if not rows:
+        await msg.answer("❌ Пользователь не найден в базе.")
+        return
+
+    user_row = rows[0]
+    uid = user_row["user_id"]
+
+    # --- Обновляем external_name ---
+    supabase.table("members") \
+        .update({"external_name": new_name}) \
+        .eq("chat_id", msg.chat.id) \
+        .eq("user_id", uid) \
+        .execute()
+
+    uname = user_row["username"]
+    fname = user_row["full_name"]
+
+    display = f"@{uname}" if uname else fname
+
+    await msg.answer(f"✅ Имя участника <b>{display}</b> изменено на: <b>{new_name}</b>", parse_mode="HTML")
 
 # ========== CONFIRM REMOVE ==========
 
