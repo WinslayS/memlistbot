@@ -137,44 +137,30 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
-    import re
-
-    def esc(text: str) -> str:
-        """Экранируем спецсимволы для MarkdownV2."""
-        if text is None:
-            text = ""
-        # Сначала экранируем обратный слэш, чтобы не поломать остальное
-        text = text.replace("\\", "\\\\")
-        # Затем экранируем все нужные символы
-        return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
-
     def safe_username(name: str | None) -> str:
-        """Пишем @username без пинга, но чтоб можно было копировать."""
         if not name:
             return ""
-        # вставляем zero-width между символами, чтобы не было реального пинга
-        broken = "​".join(list(name))  # zero-width char между каждой буквой
-        return "@​" + broken
+        # разрываем строку zero-width символами
+        return "@​" + "​".join(list(name))  # @ + w​1​n​s​l​a​y
+        # (внутри спец-символы U+200B)
 
-    lines = ["📋 *Список участников:*\n"]
+    lines = ["📋 <b>Список участников:</b>\n"]
 
     for i, row in enumerate(rows, start=1):
         full_name = row.get("full_name") or "Без имени"
         username = row.get("username") or ""
         external = row.get("external_name") or ""
 
-        # Имя в ``, чтобы удобно копировать
-        full_name_part = f"`{esc(full_name)}`"
+        # Поле имени — в ``
+        full_name_part = f"`{full_name}`"
 
-        # @username без пинга, но с форматированием
-        username_display = safe_username(username)
-        username_part = f" ({esc(username_display)})" if username else ""
+        # Username без пинга, но выглядит как @username
+        username_part = f" ({safe_username(username)})" if username else ""
 
-        # Внешнее имя
-        external_part = f" — {esc(external)}" if external else ""
+        # Внешнее имя как раньше
+        external_part = f" — {external}" if external else ""
 
-        # ВАЖНО: номер со СЛЕШЕМ перед точкой: i\.
-        lines.append(f"{i}\\\. {full_name_part}{username_part}{external_part}")
+        lines.append(f"{i}. {full_name_part}{username_part}{external_part}")
 
     await msg.answer("\n".join(lines), parse_mode="MarkdownV2")
 
