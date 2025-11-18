@@ -2,7 +2,7 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
 # ============ ENV ============
@@ -62,14 +62,15 @@ def delete_user(chat_id: int, user_id: int):
     )
 
 
-def clear_chat(chat_id: int):
-    return supabase.table("members").delete().eq("chat_id", chat_id).execute()
+def clear_left_users(chat_id: int, left_user_ids: list[int]):
+    for uid in left_user_ids:
+        supabase.table("members").delete().eq("chat_id", chat_id).eq("user_id", uid).execute()
 
 
 # ============ UTILS ============
 
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(uid: int) -> bool:
+    return uid in ADMIN_IDS
 
 
 # ============ COMMANDS ============
@@ -83,12 +84,12 @@ async def cmd_start(msg: types.Message):
     await msg.answer(
         f"👋 Привет! Ваша роль: <b>{role}</b>\n\n"
         "/list — показать список\n"
-        "/name + [имя] — установить имя из другого сервиса\n"
-        "/remove — удалить себя\n"
-        "/clear — очистить список (админ)\n"
-        "/setname + [имя или @] + [имя]— установить имя из другого сервиса (админ)"
-        , parse_mode="HTML"
+        "/name ИМЯ — установить имя из другого сервиса\n"
+        "/setname @user Имя — админ устанавливает имя другому\n"
+        "/cleanup — удалить из списка тех, кто вышел из чата (админ)",
+        parse_mode="HTML"
     )
+
 
 @dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
@@ -116,7 +117,6 @@ async def cmd_list(msg: types.Message):
 @dp.message(Command("name"))
 async def cmd_name(msg: types.Message):
     args = msg.text.split(maxsplit=1)
-
     if len(args) < 2:
         await msg.answer("✏️ Напиши имя после команды. Пример: /name DragonHunter")
         return
@@ -124,8 +124,8 @@ async def cmd_name(msg: types.Message):
     external_name = args[1].strip()
 
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user, external_name)
+    await msg.answer(f"✅ Имя установлено: <b>{external_name}</b>", parse_mode="HTML")
 
-    await msg.answer(f"✅ Имя из другого сервиса установлено: {external_name}")
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
@@ -136,123 +136,70 @@ async def admin_set_name(msg: types.Message):
         return
 
     args = msg.text.split(maxsplit=2)
-
     if len(args) < 3:
-        await msg.answer("❗ Формат: /setname @username НовоеИмя\nпример: /setname @vitalii Hunter")
+        await msg.answer("Формат: /setname @username Имя")
         return
 
     target, new_name = args[1], args[2].strip()
 
-    # Убираем @ если есть
     if target.startswith("@"):
         target_username = target[1:]
-        target_user_id = None
+        condition = ("username", target_username)
     else:
-        target_username = None
         try:
-            target_user_id = int(target)
+            target_uid = int(target)
+            condition = ("user_id", target_uid)
         except:
-            await msg.answer("❌ Ошибка: укажите @username или user_id.")
+            await msg.answer("❌ Укажите @username или user_id")
             return
 
-    # --- Найдём участника в базе ---
-    if target_username:
-        result = (
-            supabase.table("members")
-            .select("*")
-            .eq("chat_id", msg.chat.id)
-            .eq("username", target_username)
-            .execute()
-        )
-    else:
-        result = (
-            supabase.table("members")
-            .select("*")
-            .eq("chat_id", msg.chat.id)
-            .eq("user_id", target_user_id)
-            .execute()
-        )
+    column, value = condition
+
+    result = (
+        supabase.table("members")
+        .select("*")
+        .eq("chat_id", msg.chat.id)
+        .eq(column, value)
+        .execute()
+    )
 
     rows = result.data or []
-
     if not rows:
         await msg.answer("❌ Пользователь не найден в базе.")
         return
 
-    user_row = rows[0]
-    uid = user_row["user_id"]
+    uid = rows[0]["user_id"]
 
-    # --- Обновляем external_name ---
-    supabase.table("members") \
-        .update({"external_name": new_name}) \
-        .eq("chat_id", msg.chat.id) \
-        .eq("user_id", uid) \
-        .execute()
+    supabase.table("members").update({"external_name": new_name}).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
 
-    uname = user_row["username"]
-    fname = user_row["full_name"]
-
-    display = f"@{uname}" if uname else fname
-
-    await msg.answer(f"✅ Имя участника <b>{display}</b> изменено на: <b>{new_name}</b>", parse_mode="HTML")
-
-# ========== CONFIRM REMOVE ==========
-
-@dp.message(Command("remove"))
-async def confirm_remove(msg: types.Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Да, удалить", callback_data="remove_yes")],
-        [InlineKeyboardButton(text="Нет", callback_data="remove_no")]
-    ])
-    await msg.answer("❓ Вы уверены, что хотите удалить себя из списка?", reply_markup=kb)
+    await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
 
 
-@dp.callback_query(lambda c: c.data == "remove_yes")
-async def remove_yes(callback: types.CallbackQuery):
-    await asyncio.to_thread(delete_user, callback.message.chat.id, callback.from_user.id)
-    await callback.message.edit_text("🗑 Вы удалены из списка!")
-    await callback.answer()
+# ========== CLEANUP (удаление ушедших) ==========
 
-
-@dp.callback_query(lambda c: c.data == "remove_no")
-async def remove_no(callback: types.CallbackQuery):
-    await callback.message.edit_text("❌ Удаление отменено.")
-    await callback.answer()
-
-
-# ========== CONFIRM CLEAR ==========
-
-@dp.message(Command("clear"))
-async def confirm_clear(msg: types.Message):
+@dp.message(Command("cleanup"))
+async def cmd_cleanup(msg: types.Message):
     if not is_admin(msg.from_user.id):
-        await msg.answer("⛔ Только админ может очистить список!")
+        await msg.answer("⛔ Только админ может очищать список.")
         return
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Да, очистить", callback_data="clear_yes")],
-        [InlineKeyboardButton(text="Нет", callback_data="clear_no")]
-    ])
-    await msg.answer("❓ Точно очистить весь список?", reply_markup=kb)
+    rows = await asyncio.to_thread(get_members, msg.chat.id)
+    left_users = []
+
+    for row in rows:
+        try:
+            member = await bot.get_chat_member(msg.chat.id, row["user_id"])
+            if member.status in ("left", "kicked"):
+                left_users.append(row["user_id"])
+        except Exception:
+            left_users.append(row["user_id"])
+
+    await asyncio.to_thread(clear_left_users, msg.chat.id, left_users)
+
+    await msg.answer(f"🧹 Очистка завершена!\nУдалено: <b>{len(left_users)}</b> пользователей.", parse_mode="HTML")
 
 
-@dp.callback_query(lambda c: c.data == "clear_yes")
-async def clear_yes(callback: types.CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("Нет доступа!", show_alert=True)
-        return
-
-    await asyncio.to_thread(clear_chat, callback.message.chat.id)
-    await callback.message.edit_text("🧹 Список полностью очищен!")
-    await callback.answer()
-
-
-@dp.callback_query(lambda c: c.data == "clear_no")
-async def clear_no(callback: types.CallbackQuery):
-    await callback.message.edit_text("❌ Очистка отменена.")
-    await callback.answer()
-
-
-# ============ AUTO REGISTER ============
+# ========== AUTO-REGISTER ==========
 
 @dp.message()
 async def auto_register(msg: types.Message):
@@ -261,6 +208,18 @@ async def auto_register(msg: types.Message):
             await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
         except Exception as e:
             print("Supabase error:", e)
+
+
+# ========== HANDLE USER LEAVING CHAT ==========
+
+@dp.chat_member()
+async def chat_member_update(event: types.ChatMemberUpdated):
+    old = event.old_chat_member.status
+    new = event.new_chat_member.status
+
+    # Если пользователь ушёл или был кикнут
+    if new in ("left", "kicked"):
+        await asyncio.to_thread(delete_user, event.chat.id, event.from_user.id)
 
 
 # ============ RUN ============
