@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from supabase import create_client, Client
 
-# ============ ENV CHECK ============
+# -------- ENV --------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -12,70 +12,77 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 if not BOT_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
     raise Exception("Missing BOT_TOKEN or SUPABASE_URL or SUPABASE_KEY in env variables")
 
-# ============ INIT ============
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-OWNER_ID = 8523019691  # при необходимости замени на свой id
+OWNER_ID = 8523019691  # твой ID
 
 
-# ===============================================================
-#                           DB HELPERS
-# ===============================================================
+# ============================================
+#  DB HELPERS
+# ============================================
 
-def add_member(chat_id, user_id, username, fullname):
-    return (
-        supabase.table("members")
-        .upsert({
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "username": username,
-            "full_name": fullname,
-        })
-        .execute()
-    )
+def create_or_update_user(msg: types.Message):
+    """Создание записи при любом обращении и авто-обновление username/full_name."""
+    user = msg.from_user
+    chat_id = msg.chat.id
+
+    supabase.table("members").upsert({
+        "chat_id": chat_id,
+        "user_id": user.id,
+        "username": user.username,
+        "full_name": user.full_name,
+    }).execute()
 
 
 def set_external_name(user_id, chat_id, external_name):
-    return (
-        supabase.table("members")
-        .update({"external_name": external_name})
-        .eq("user_id", user_id)
-        .eq("chat_id", chat_id)
+    return supabase.table("members") \
+        .update({"external_name": external_name}) \
+        .eq("user_id", user_id) \
+        .eq("chat_id", chat_id) \
         .execute()
-    )
 
 
 def get_members(chat_id):
-    response = (
+    rows = (
         supabase.table("members")
         .select("*")
         .eq("chat_id", chat_id)
-        .order("created_at", desc=False)  # правильная сортировка
+        .order("created_at", desc=False)
         .execute()
+        .data
     )
-    return response.data
+    return rows
 
 
 def remove_member(chat_id, user_id):
-    return (
-        supabase.table("members")
-        .delete()
-        .eq("chat_id", chat_id)
-        .eq("user_id", user_id)
+    return supabase.table("members") \
+        .delete() \
+        .eq("chat_id", chat_id) \
+        .eq("user_id", user_id) \
         .execute()
-    )
 
 
 def clear_members(chat_id):
     return supabase.table("members").delete().eq("chat_id", chat_id).execute()
 
 
-# ===============================================================
-#                           COMMANDS
-# ===============================================================
+# ============================================
+#  MIDDLEWARE: auto-update + auto-create
+# ============================================
+
+@dp.message()
+async def auto_register_and_update(msg: types.Message, handler):
+    """Выполняется ПЕРЕД любой командой — создаёт пользователя и обновляет данные."""
+    create_or_update_user(msg)
+    return await handler(msg)
+
+
+# ============================================
+#  COMMANDS
+# ============================================
 
 @dp.message(Command("start"))
 async def cmd_start(msg: types.Message):
@@ -91,17 +98,9 @@ async def cmd_start(msg: types.Message):
 
 @dp.message(Command("join"))
 async def cmd_join(msg: types.Message):
-    chat_id = msg.chat.id
     user = msg.from_user
 
-    add_member(
-        chat_id=chat_id,
-        user_id=user.id,
-        username=user.username,
-        fullname=user.full_name,
-    )
-
-    await msg.answer(f"✅ {user.full_name or user.username} добавлен в список!")
+    await msg.answer(f"✅ {user.full_name} добавлен в список!")
 
 
 @dp.message(Command("list"))
@@ -116,11 +115,9 @@ async def cmd_list(msg: types.Message):
     text = "📋 <b>Список участников:</b>\n\n"
 
     for i, row in enumerate(rows, start=1):
-        tg_name = row["full_name"] or "Без имени"
-        username = f"(@{row['username']})" if row["username"] else ""
-        external = f" – {row['external_name']}" if row["external_name"] else ""
-
-        text += f"{i}. {tg_name} {username}{external}\n"
+        uname = f"@{row['username']}" if row["username"] else row["full_name"]
+        extr = f" — {row['external_name']}" if row.get("external_name") else ""
+        text += f"{i}. {uname}{extr}\n"
 
     await msg.answer(text, parse_mode="HTML")
 
@@ -129,8 +126,8 @@ async def cmd_list(msg: types.Message):
 async def cmd_name(msg: types.Message):
     chat_id = msg.chat.id
     user = msg.from_user
-
     args = msg.text.split(" ", 1)
+
     if len(args) < 2:
         await msg.answer("✏️ Напиши имя после команды. Пример: /name DragonHunter")
         return
@@ -164,9 +161,9 @@ async def cmd_clear(msg: types.Message):
     await msg.answer("🧹 Список полностью очищен!")
 
 
-# ===============================================================
-#                           RUN
-# ===============================================================
+# ============================================
+#  RUN
+# ============================================
 
 async def main():
     print("BOT STARTED OK")
