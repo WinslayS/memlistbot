@@ -84,8 +84,10 @@ async def cmd_start(msg: types.Message):
     await msg.answer(
         f"👋 Привет! Ваша роль: <b>{role}</b>\n\n"
         "/list — показать список\n"
-        "/name ИМЯ — установить имя из другого сервиса\n"
-        "/setname @user Имя — админ устанавливает имя другому\n"
+        "/name [имя] — установить имя из другого сервиса\n"
+        "/find [имя] — найти участника по имени или @\n"
+        "/setname @user [имя] —  установить имя другому участнику (админ)\n"
+        "/export — создать файл с участниками (админ)\n"
         "/cleanup — удалить из списка тех, кто вышел из чата (админ)",
         parse_mode="HTML"
     )
@@ -173,6 +175,91 @@ async def admin_set_name(msg: types.Message):
     supabase.table("members").update({"external_name": new_name}).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
 
     await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
+
+# ========== ADMIN EXPORT CSV ==========
+
+import csv
+import io
+from aiogram.types import InputFile
+
+@dp.message(Command("export"))
+async def cmd_export(msg: types.Message):
+    if not is_admin(msg.from_user.id):
+        await msg.answer("⛔ Только админ может экспортировать список.")
+        return
+
+    rows = await asyncio.to_thread(get_members, msg.chat.id)
+
+    if not rows:
+        await msg.answer("Список пуст, нечего экспортировать.")
+        return
+
+    # Создаём CSV-файл в памяти
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(["№", "Full Name", "Username", "External Name", "User ID"])
+
+    for i, row in enumerate(rows, start=1):
+        writer.writerow([
+            i,
+            row.get("full_name") or "",
+            f"@{row['username']}" if row.get("username") else "",
+            row.get("external_name") or "",
+            row.get("user_id")
+        ])
+
+    output.seek(0)
+    file = InputFile(path_or_bytesio=output, filename=f"members_chat_{msg.chat.id}.csv")
+
+    await msg.answer_document(file, caption="📄 Экспортирован список участников.")
+
+# ========== FIND USER ==========
+
+@dp.message(Command("find")))
+async def cmd_find(msg: types.Message):
+    args = msg.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        await msg.answer("Использование: /find часть_имени или @username")
+        return
+
+    query = args[1].lstrip("@").strip().lower()
+
+    rows = await asyncio.to_thread(get_members, msg.chat.id)
+
+    results = []
+
+    for row in rows:
+        full_name = (row.get("full_name") or "").lower()
+        username = (row.get("username") or "").lower()
+        external = (row.get("external_name") or "").lower()
+
+        # Поиск по любой части поля
+        if (
+            query in full_name
+            or query in username
+            or query in external
+        ):
+            results.append(row)
+
+    if not results:
+        await msg.answer("❌ Никто не найден.")
+        return
+
+    lines = ["🔎 <b>Результаты поиска:</b>\n"]
+
+    for i, row in enumerate(results, start=1):
+        full_name = row.get("full_name") or "Без имени"
+        username = row.get("username") or ""
+        external = row.get("external_name") or ""
+
+        username_part = f" (@{username})" if username else ""
+        external_part = f" — {external}" if external else ""
+
+        lines.append(f"{i}. {full_name}{username_part}{external_part}")
+
+    await msg.answer("\n".join(lines), parse_mode="HTML")
 
 
 # ========== CLEANUP (удаление ушедших) ==========
