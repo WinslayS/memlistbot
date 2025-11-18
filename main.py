@@ -26,12 +26,22 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ============ DB HELPERS ============
 
 def upsert_user(chat_id: int, user: types.User, external_name: str | None = None):
+
+    # === SKIP Anonymous Admin ===
+    if (
+        user.username == "GroupAnonymousBot"
+        or user.is_bot and user.id == chat_id
+        or user.full_name == "Group"  # иногда Telegram отдает так
+    ):
+        return  # просто не записываем в базу
+
     payload = {
         "chat_id": chat_id,
         "user_id": user.id,
         "username": user.username or "",
         "full_name": user.full_name or "",
     }
+
     if external_name is not None:
         payload["external_name"] = external_name
 
