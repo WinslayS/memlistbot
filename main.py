@@ -82,7 +82,6 @@ async def cmd_start(msg: types.Message):
 
     await msg.answer(
         f"👋 Привет! Ваша роль: <b>{role}</b>\n\n"
-        "/join — записаться в список\n"
         "/list — показать список\n"
         "/name + [имя] — установить имя из другого сервиса\n"
         "/remove — удалить себя\n"
@@ -90,13 +89,6 @@ async def cmd_start(msg: types.Message):
         "/setname + [имя или @] + [имя]— установить имя из другого сервиса (админ)"
         , parse_mode="HTML"
     )
-
-
-@dp.message(Command("join"))
-async def cmd_join(msg: types.Message):
-    await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
-    await msg.answer(f"✅ {msg.from_user.full_name} добавлен в список!")
-
 
 @dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
