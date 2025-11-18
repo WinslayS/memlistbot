@@ -137,23 +137,32 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
+    def safe_username(name: str | None) -> str:
+        if not name:
+            return ""
+        # разрываем строку zero-width символами
+        return "@​" + "​".join(list(name))  # @ + w​1​n​s​l​a​y
+        # (внутри спец-символы U+200B)
+
     lines = ["📋 <b>Список участников:</b>\n"]
+
     for i, row in enumerate(rows, start=1):
-        lines.append(format_member_inline(row, i))
+        full_name = row.get("full_name") or "Без имени"
+        username = row.get("username") or ""
+        external = row.get("external_name") or ""
 
-    await msg.answer("\n".join(lines), parse_mode="HTML")
+        # Поле имени — в ``
+        full_name_part = f"`{full_name}`"
 
-@dp.message(Command("name"))
-async def cmd_name(msg: types.Message):
-    args = msg.text.split(maxsplit=1)
-    if len(args) < 2:
-        await msg.answer("✏️ Напиши имя после команды. Пример: /name DragonHunter")
-        return
+        # Username без пинга, но выглядит как @username
+        username_part = f" ({safe_username(username)})" if username else ""
 
-    external_name = args[1].strip()
+        # Внешнее имя как раньше
+        external_part = f" — {external}" if external else ""
 
-    await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user, external_name)
-    await msg.answer(f"✅ Имя установлено: <b>{external_name}</b>", parse_mode="HTML")
+        lines.append(f"{i}. {full_name_part}{username_part}{external_part}")
+
+    await msg.answer("\n".join(lines), parse_mode="MarkdownV2")
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
