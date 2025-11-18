@@ -137,28 +137,31 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
+    import re
+
+    def esc(text: str) -> str:
+        """Экранируем символы для MarkdownV2."""
+        return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
+
     def safe_username(name: str | None) -> str:
         if not name:
             return ""
-        # разрываем строку zero-width символами
-        return "@​" + "​".join(list(name))  # @ + w​1​n​s​l​a​y
-        # (внутри спец-символы U+200B)
+        # разрыв, чтобы НЕ было пинга, но выглядело как @username
+        broken = "​".join(list(name))  # zero-width chars
+        return "@​" + broken
 
-    lines = ["📋 <b>Список участников:</b>\n"]
+    lines = ["📋 *Список участников:*\n"]
 
     for i, row in enumerate(rows, start=1):
         full_name = row.get("full_name") or "Без имени"
         username = row.get("username") or ""
         external = row.get("external_name") or ""
 
-        # Поле имени — в ``
-        full_name_part = f"`{full_name}`"
+        full_name_part = f"`{esc(full_name)}`"
 
-        # Username без пинга, но выглядит как @username
-        username_part = f" ({safe_username(username)})" if username else ""
+        username_part = f" ({esc(safe_username(username))})" if username else ""
 
-        # Внешнее имя как раньше
-        external_part = f" — {external}" if external else ""
+        external_part = f" — {esc(external)}" if external else ""
 
         lines.append(f"{i}. {full_name_part}{username_part}{external_part}")
 
