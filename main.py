@@ -82,6 +82,32 @@ def clear_left_users(chat_id: int, left_user_ids: list[int]):
 def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
 
+# ============ FORMAT HELPERS ============
+
+ZERO_WIDTH_SPACE = "\u200B"  # невидимый символ
+
+def make_silent_username(username: str) -> str:
+    if not username:
+        return ""
+    # @ + zero-width-space + username
+    return f"@{ZERO_WIDTH_SPACE}{username}"
+
+def format_member_inline(row: dict, index: int | None = None) -> str:
+    """
+    Формат одной строки:
+    1. Vitalii (@w1nslay) — Kvane
+    """
+    full_name = row.get("full_name") or "Без имени"
+    username = row.get("username") or ""
+    external = row.get("external_name") or ""
+
+    username_part = f" ({make_silent_username(username)})" if username else ""
+    external_part = f" — {external}" if external else ""
+
+    if index is not None:
+        return f"{index}. {full_name}{username_part}{external_part}"
+    return f"{full_name}{username_part}{external_part}"
+
 
 # ============ COMMANDS ============
 
@@ -102,7 +128,6 @@ async def cmd_start(msg: types.Message):
         parse_mode="HTML"
     )
 
-
 @dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
@@ -114,17 +139,9 @@ async def cmd_list(msg: types.Message):
 
     lines = ["📋 <b>Список участников:</b>\n"]
     for i, row in enumerate(rows, start=1):
-        full_name = row.get("full_name") or "Без имени"
-        username = row.get("username") or ""
-        external = row.get("external_name") or ""
-
-        username_part = f" (@{username})" if username else ""
-        external_part = f" — {external}" if external else ""
-
-        lines.append(f"{i}. {full_name}{username_part}{external_part}")
+        lines.append(format_member_inline(row, i))
 
     await msg.answer("\n".join(lines), parse_mode="HTML")
-
 
 @dp.message(Command("name"))
 async def cmd_name(msg: types.Message):
@@ -137,7 +154,6 @@ async def cmd_name(msg: types.Message):
 
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user, external_name)
     await msg.answer(f"✅ Имя установлено: <b>{external_name}</b>", parse_mode="HTML")
-
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
@@ -211,10 +227,11 @@ async def cmd_export(msg: types.Message):
     writer.writerow(["№", "Full Name", "Username", "External Name"])
 
     for i, row in enumerate(rows, start=1):
+        username = row.get("username") or ""
         writer.writerow([
             i,
             row.get("full_name") or "",
-            f"@{row['username']}" if row.get("username") else "",
+            f"@{username}" if username else "",
             row.get("external_name") or "",
         ])
 
@@ -234,22 +251,15 @@ async def cmd_find(msg: types.Message):
         return
 
     query = args[1].lstrip("@").strip().lower()
-
     rows = await asyncio.to_thread(get_members, msg.chat.id)
 
     results = []
-
     for row in rows:
         full_name = (row.get("full_name") or "").lower()
         username = (row.get("username") or "").lower()
         external = (row.get("external_name") or "").lower()
 
-        # Поиск по любой части поля
-        if (
-            query in full_name
-            or query in username
-            or query in external
-        ):
+        if query in full_name or query in username or query in external:
             results.append(row)
 
     if not results:
@@ -257,19 +267,10 @@ async def cmd_find(msg: types.Message):
         return
 
     lines = ["🔎 <b>Результаты поиска:</b>\n"]
-
     for i, row in enumerate(results, start=1):
-        full_name = row.get("full_name") or "Без имени"
-        username = row.get("username") or ""
-        external = row.get("external_name") or ""
-
-        username_part = f" (@{username})" if username else ""
-        external_part = f" — {external}" if external else ""
-
-        lines.append(f"{i}. {full_name}{username_part}{external_part}")
+        lines.append(format_member_inline(row, i))
 
     await msg.answer("\n".join(lines), parse_mode="HTML")
-
 
 # ========== CLEANUP (удаление ушедших) ==========
 
