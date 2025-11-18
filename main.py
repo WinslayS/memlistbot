@@ -140,14 +140,20 @@ async def cmd_list(msg: types.Message):
     import re
 
     def esc(text: str) -> str:
-        """Экранируем символы для MarkdownV2."""
+        """Экранируем спецсимволы для MarkdownV2."""
+        if text is None:
+            text = ""
+        # Сначала экранируем обратный слэш, чтобы не поломать остальное
+        text = text.replace("\\", "\\\\")
+        # Затем экранируем все нужные символы
         return re.sub(r'([_*\[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
     def safe_username(name: str | None) -> str:
+        """Пишем @username без пинга, но чтоб можно было копировать."""
         if not name:
             return ""
-        # разрыв, чтобы НЕ было пинга, но выглядело как @username
-        broken = "​".join(list(name))  # zero-width chars
+        # вставляем zero-width между символами, чтобы не было реального пинга
+        broken = "​".join(list(name))  # zero-width char между каждой буквой
         return "@​" + broken
 
     lines = ["📋 *Список участников:*\n"]
@@ -157,13 +163,18 @@ async def cmd_list(msg: types.Message):
         username = row.get("username") or ""
         external = row.get("external_name") or ""
 
+        # Имя в ``, чтобы удобно копировать
         full_name_part = f"`{esc(full_name)}`"
 
-        username_part = f" ({esc(safe_username(username))})" if username else ""
+        # @username без пинга, но с форматированием
+        username_display = safe_username(username)
+        username_part = f" ({esc(username_display)})" if username else ""
 
+        # Внешнее имя
         external_part = f" — {esc(external)}" if external else ""
 
-        lines.append(f"{i}. {full_name_part}{username_part}{external_part}")
+        # ВАЖНО: номер со СЛЕШЕМ перед точкой: i\.
+        lines.append(f"{i}\\\. {full_name_part}{username_part}{external_part}")
 
     await msg.answer("\n".join(lines), parse_mode="MarkdownV2")
 
