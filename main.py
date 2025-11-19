@@ -143,6 +143,33 @@ async def cmd_list(msg: types.Message):
 
     await msg.answer("\n".join(lines), parse_mode="HTML")
 
+# ========== NAME ==========
+
+@dp.message(Command("name"))
+async def cmd_name(msg: types.Message):
+    # Разбиваем текст: "/name Kvane"
+    args = msg.text.split(maxsplit=1)
+
+    # Если аргумента нет
+    if len(args) < 2:
+        await msg.answer("✏️ Напиши имя после команды. Пример: /name Kvane")
+        return
+
+    external_name = args[1].strip()
+
+    # Обновляем / создаём пользователя с external_name
+    await asyncio.to_thread(
+        upsert_user,
+        msg.chat.id,
+        msg.from_user,
+        external_name
+    )
+
+    await msg.answer(
+        f"✅ Имя установлено: <b>{external_name}</b>",
+        parse_mode="HTML"
+    )
+
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
 @dp.message(Command("setname"))
