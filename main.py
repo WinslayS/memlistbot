@@ -92,6 +92,7 @@ def make_silent_username(username: str) -> str:
     # @ + zero-width-space + username
     return f"@{ZERO_WIDTH_SPACE}{username}"
 
+
 def format_member_inline(row: dict, index: int | None = None) -> str:
     """
     Формат одной строки:
@@ -107,7 +108,6 @@ def format_member_inline(row: dict, index: int | None = None) -> str:
     if index is not None:
         return f"{index}. {full_name}{username_part}{external_part}"
     return f"{full_name}{username_part}{external_part}"
-
 
 # ============ COMMANDS ============
 
@@ -137,32 +137,11 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
-    def safe_username(name: str | None) -> str:
-        if not name:
-            return ""
-        # разрываем строку zero-width символами
-        return "@​" + "​".join(list(name))  # @ + w​1​n​s​l​a​y
-        # (внутри спец-символы U+200B)
-
     lines = ["📋 <b>Список участников:</b>\n"]
-
     for i, row in enumerate(rows, start=1):
-        full_name = row.get("full_name") or "Без имени"
-        username = row.get("username") or ""
-        external = row.get("external_name") or ""
+        lines.append(format_member_inline(row, i))
 
-        # Поле имени — в ``
-        full_name_part = f"`{full_name}`"
-
-        # Username без пинга, но выглядит как @username
-        username_part = f" ({safe_username(username)})" if username else ""
-
-        # Внешнее имя как раньше
-        external_part = f" — {external}" if external else ""
-
-        lines.append(f"{i}. {full_name_part}{username_part}{external_part}")
-
-    await msg.answer("\n".join(lines), parse_mode="MarkdownV2")
+    await msg.answer("\n".join(lines), parse_mode="HTML")
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
