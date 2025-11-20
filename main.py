@@ -336,7 +336,7 @@ async def cmd_name(msg: types.Message):
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
-@dp.message(Command("setname")))
+@dp.message(Command("setname"))
 async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
