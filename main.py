@@ -336,14 +336,19 @@ async def cmd_name(msg: types.Message):
 
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
-@dp.message(Command("setname"))
+@dp.message(Command("setname")))
 async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
 
     args = msg.text.split(maxsplit=2)
     if len(args) < 3:
-        await msg.answer("Формат: /setname @username Имя")
+        await msg.answer(
+            "Формат:\n"
+            "/setname @username Имя\n"
+            "/setname user_id Имя\n"
+            "/setname Имя_пользователя Имя"
+        )
         return
 
     target, new_name = args[1], args[2].strip()
@@ -356,38 +361,52 @@ async def admin_set_name(msg: types.Message):
         await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
         return
 
+    members = await asyncio.to_thread(get_members, msg.chat.id)
+
+    found_user = None
+
+    # 1️⃣ Если начинается с @ → username
     if target.startswith("@"):
-        target_username = target[1:]
-        condition = ("username", target_username)
+        username = target[1:].lower()
+        for m in members:
+            if m.get("username", "").lower() == username:
+                found_user = m
+                break
+
+    # 2️⃣ Если число → user_id
+    elif target.isdigit():
+        uid = int(target)
+        for m in members:
+            if m.get("user_id") == uid:
+                found_user = m
+                break
+
+    # 3️⃣ Иначе → считаем, что это full_name
     else:
-        try:
-            target_uid = int(target)
-            condition = ("user_id", target_uid)
-        except:
-            await msg.answer("❌ Укажите @username или user_id")
+        lower_name = target.lower()
+        candidates = [m for m in members if m.get("full_name", "").lower() == lower_name]
+
+        if len(candidates) == 1:
+            found_user = candidates[0]
+        elif len(candidates) > 1:
+            await msg.answer("⚠ Найдено несколько пользователей с таким именем — уточните.")
             return
 
-    column, value = condition
-
-    result = (
-        supabase.table("members")
-        .select("*")
-        .eq("chat_id", msg.chat.id)
-        .eq(column, value)
-        .execute()
-    )
-
-    rows = result.data or []
-    if not rows:
-        await msg.answer("❌ Пользователь не найден в базе.")
+    if not found_user:
+        await msg.answer("❌ Пользователь не найден.")
         return
 
-    uid = rows[0]["user_id"]
+    # обновляем
+    uid = found_user["user_id"]
 
-    supabase.table("members").update({"external_name": new_name}).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+    supabase.table("members") \
+        .update({"external_name": new_name}) \
+        .eq("chat_id", msg.chat.id) \
+        .eq("user_id", uid) \
+        .execute()
 
     await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
-    
+
     logger.info(
         "Админ %s изменил имя пользователю %s на '%s' в чате %s",
         msg.from_user.id, uid, new_name, msg.chat.id
