@@ -5,6 +5,8 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
+# ============ LOGGING ============
+
 import logging
 import time
 
@@ -13,6 +15,27 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
+logger = logging.getLogger(__name__)
+
+class ColorFormatter(logging.Formatter):
+    COLORS = {
+        logging.DEBUG: "\033[37m",      # серый
+        logging.INFO: "\033[36m",       # голубой
+        logging.WARNING: "\033[33m",    # жёлтый
+        logging.ERROR: "\033[31m",      # красный
+        logging.CRITICAL: "\033[91m",   # ярко-красный
+    }
+    RESET = "\033[0m"
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelno, self.RESET)
+        message = super().format(record)
+        return f"{color}{message}{self.RESET}"
+
+handler = logging.StreamHandler()
+handler.setFormatter(ColorFormatter("[%(levelname)s] %(message)s"))
+
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
 # ============ ENV ============
