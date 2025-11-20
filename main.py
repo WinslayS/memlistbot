@@ -341,19 +341,20 @@ async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    args = msg.text.split(maxsplit=1)
-
+    # ===============================
+    #     СПОСОБ №1 — ЧЕРЕЗ REPLY
+    # ===============================
     if msg.reply_to_message:
-        # ===============================
-        #   СПОСОБ №1 — ЧЕРЕЗ REPLY
-        # ===============================
+        target_user = msg.reply_to_message.from_user
+
+        args = msg.text.split(maxsplit=1)
         if len(args) < 2:
             await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
             return
 
         new_name = args[1].strip()
-        target_user = msg.reply_to_message.from_user
 
+        # Добавляем или обновляем пользователя
         supabase.table("members").upsert({
             "chat_id": msg.chat.id,
             "user_id": target_user.id,
@@ -363,57 +364,68 @@ async def admin_set_name(msg: types.Message):
         }, on_conflict="chat_id,user_id").execute()
 
         await msg.answer(
-            f"✨ Имя участника обновлено на <b>{new_name}</b>",
+            f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
             parse_mode="HTML"
         )
         return
 
-    # === Если reply нет -> классическая логика ===
-    if len(args) < 2:
+    # ===============================
+    #     СПОСОБ №2 — @username / id / имя
+    # ===============================
+
+    args = msg.text.split(maxsplit=2)
+    if len(args) < 3:
         await msg.answer(
             "Форматы:\n"
             "/setname @username Имя\n"
             "/setname user_id Имя\n"
+            "/setname ПолноеИмя Имя\n"
             "ИЛИ ответом на сообщение:\n"
-            "/setname Имя"
+            "/setname НовоеИмя"
         )
         return
 
-    args = msg.text.split(maxsplit=2)
-    if len(args) < 3:
-        await msg.answer("Нужно указать имя: /setname @username Новый_имя")
-        return
-
-    target, new_name = args[1], args[2].strip()
+    target, new_name = args[1].strip(), args[2].strip()
 
     members = await asyncio.to_thread(get_members, msg.chat.id)
+
     found_user = None
 
+    # 1️⃣ username
     if target.startswith("@"):
-        username = target[1:].lower()
-        found_user = next((m for m in members if m["username"].lower() == username), None)
+        uname = target[1:].lower()
+        found_user = next((m for m in members if (m.get("username") or "").lower() == uname), None)
 
+    # 2️⃣ user_id
     elif target.isdigit():
         uid = int(target)
-        found_user = next((m for m in members if m["user_id"] == uid), None)
+        found_user = next((m for m in members if m.get("user_id") == uid), None)
 
+    # 3️⃣ full_name
     else:
-        candidates = [m for m in members if m["full_name"].lower() == target.lower()]
+        name_lower = target.lower()
+        candidates = [m for m in members if (m.get("full_name") or "").lower() == name_lower]
+
         if len(candidates) == 1:
             found_user = candidates[0]
         elif len(candidates) > 1:
-            await msg.answer("⚠ Найдено несколько пользователей с таким именем — уточните.")
+            await msg.answer("⚠ Найдено несколько участников с таким именем — уточните.")
             return
 
     if not found_user:
-        await msg.answer("❌ Пользователь не найден.")
+        await msg.answer("❌ Пользователь не найден в базе. Используйте reply на его сообщение.")
         return
 
-    supabase.table("members").update({
-        "external_name": new_name
-    }).eq("chat_id", msg.chat.id).eq("user_id", found_user["user_id"]).execute()
+    uid = found_user["user_id"]
 
-    await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
+    supabase.table("members").update({"external_name": new_name}).eq(
+        "chat_id", msg.chat.id
+    ).eq("user_id", uid).execute()
+
+    await msg.answer(
+        f"✨ Имя участника обновлено на <b>{new_name}</b>",
+        parse_mode="HTML"
+    )
 
 # ========== ADMIN EXPORT CSV ==========
 
