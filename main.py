@@ -397,7 +397,7 @@ async def admin_set_name(msg: types.Message):
 
 import csv
 import io
-from aiogram.types import InputFile
+from aiogram.types import BufferedInputFile
 
 @dp.message(Command("export"))
 async def cmd_export(msg: types.Message):
@@ -425,8 +425,13 @@ async def cmd_export(msg: types.Message):
             row.get("external_name") or "",
         ])
 
-    output.seek(0)
-    file = InputFile(path_or_bytesio=output, filename=f"members_chat_{msg.chat.id}.csv")
+    # переходим на bytes
+    csv_bytes = output.getvalue().encode("utf-8")
+
+    file = BufferedInputFile(
+        file=csv_bytes,
+        filename=f"members_chat_{msg.chat.id}.csv"
+    )
 
     await msg.answer_document(file, caption="📄 Экспортирован список участников.")
 
