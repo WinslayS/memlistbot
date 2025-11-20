@@ -22,7 +22,6 @@ dp = Dispatcher()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
 # ============ DB HELPERS ============
 
 def upsert_user(chat_id: int, user: types.User, external_name: str | None = None):
@@ -50,7 +49,6 @@ def upsert_user(chat_id: int, user: types.User, external_name: str | None = None
         on_conflict="chat_id, user_id"
     ).execute()
 
-
 def get_members(chat_id: int):
     res = (
         supabase.table("members")
@@ -61,7 +59,6 @@ def get_members(chat_id: int):
     )
     return res.data or []
 
-
 def delete_user(chat_id: int, user_id: int):
     return (
         supabase.table("members")
@@ -71,16 +68,58 @@ def delete_user(chat_id: int, user_id: int):
         .execute()
     )
 
-
 def clear_left_users(chat_id: int, left_user_ids: list[int]):
     for uid in left_user_ids:
         supabase.table("members").delete().eq("chat_id", chat_id).eq("user_id", uid).execute()
 
+# ============ ADMIN CHECKER ============
 
-# ============ UTILS ============
+async def is_user_admin(msg: types.Message) -> bool:
+    """Проверка: пользователь — администратор чата?"""
+    try:
+        admins = await msg.chat.get_administrators()
+        admin_ids = [a.user.id for a in admins]
+        return msg.from_user.id in admin_ids
+    except Exception as e:
+        print("ADMIN USER CHECK ERROR:", e)
+        return False
 
-def is_admin(uid: int) -> bool:
-    return uid in ADMIN_IDS
+
+async def is_bot_admin(msg: types.Message) -> bool:
+    """Проверка: бот — администратор чата?"""
+    try:
+        admins = await msg.chat.get_administrators()
+        admin_ids = [a.user.id for a in admins]
+        return msg.bot.id in admin_ids
+    except Exception as e:
+        print("ADMIN BOT CHECK ERROR:", e)
+        return False
+
+async def admin_check(msg: types.Message) -> bool:
+    """
+    Возвращает True — если всё в порядке.
+    Возвращает False — если команду нужно остановить.
+    """
+
+    user_admin = await is_user_admin(msg)
+    bot_admin = await is_bot_admin(msg)
+
+    # Пользователь не админ
+    if not user_admin:
+        await msg.answer("⛔ Эта команда доступна только администраторам.")
+        return False
+
+    # Пользователь админ, но бот нет
+    if not bot_admin:
+        await msg.answer(
+            "⚠️ Я не являюсь администратором, поэтому не могу выполнить команду.\n\n"
+            "Пожалуйста, выдайте мне право <b>«Добавление администраторов»</b>.",
+            parse_mode="HTML"
+        )
+        return False
+
+    # Всё хорошо — можно выполнять
+    return True
 
 # ============ FORMAT HELPERS ============
 
@@ -96,7 +135,7 @@ def make_silent_username(username: str) -> str:
 def format_member_inline(row: dict, index: int | None = None) -> str:
     """
     Формат одной строки:
-    1. Vitalii (@w1nslay) — Kvane
+    1. Андрей, (@Bob123) - Лучший
     """
     full_name = row.get("full_name") or "Без имени"
     username = row.get("username") or ""
@@ -109,24 +148,66 @@ def format_member_inline(row: dict, index: int | None = None) -> str:
         return f"{index}. {full_name}{username_part}{external_part}"
     return f"{full_name}{username_part}{external_part}"
 
+# ============ FIRST MESSAGE ============
+
+@dp.chat_member()
+async def on_bot_added(event: types.ChatMemberUpdated):
+    if event.new_chat_member.user.id == bot.id and event.new_chat_member.status == "member":
+        await bot.send_message(
+            event.chat.id,
+            "🤖 <b>Бот подключён!</b>\n\n"
+            "Чтобы всё работало корректно:\n"
+            "• дайте мне право <b>«Добавление администраторов»</b>\n"
+            "• отключите <b>анонимность администраторов</b>\n"
+            "• команды пишите <b>без пробела после слэша</b> — <code>/setname</code>, <code>/export</code>\n\n"
+            "После этого все функции будут работать корректно.",
+            parse_mode=\"HTML\"
+        )
+
+# ============ AUTO ADD NEW CHAT MEMBERS ============
+
+@dp.chat_member()
+async def on_user_join(event: types.ChatMemberUpdated):
+    old = event.old_chat_member.status
+    new = event.new_chat_member.status
+
+    # Новичок вошёл в чат
+    if old in ("left", "kicked") and new in ("member", "administrator"):
+        user = event.new_chat_member.user
+
+        # игнорируем анонимных админов и ботов
+        if user.username == "GroupAnonymousBot" or user.is_bot:
+            return
+
+        # добавляем человека в базу
+        await asyncio.to_thread(
+            upsert_user,
+            event.chat.id,
+            user
+        )
+
 # ============ COMMANDS ============
 
 @dp.message(Command("start"))
 async def cmd_start(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
 
-    role = "Админ" if is_admin(msg.from_user.id) else "Участник"
+    role = "Админ" if await is_user_admin(msg) else "Участник"
 
-    await msg.answer(
-        f"👋 Привет! Ваша роль: <b>{role}</b>\n\n"
-        "/list — показать список\n"
-        "/name [имя] — установить имя из другого сервиса\n"
-        "/find [имя] — найти участника по имени или @\n"
-        "/setname [@] [имя] —  установить имя другому участнику (админ)\n"
-        "/export — создать файл с участниками (админ)\n"
-        "/cleanup — удалить из списка тех, кто вышел из чата (админ)",
-        parse_mode="HTML"
-    )
+await msg.answer(
+    f"👋 Привет! Ваша роль: <b>{role}</b>\n\n"
+    "📌 <b>Команды:</b>\n"
+    "/list — показать список участников\n"
+    "/name [имя] — задать своё имя\n"
+    "/find [имя/@] — поиск участника\n"
+    "/setname [@] [имя] — назначить имя другому (админ)\n"
+    "/export — экспорт списка (админ)\n"
+    "/cleanup — очистить список ушедших (админ)\n\n"
+    "📖 <b>Обозначения:</b>\n"
+    "• <code>[@]</code> — Telegram username участника без пробелов\n"
+    "• <code>[имя]</code> — любое текстовое имя (например: Андрей, Bob123)\n\n"
+    parse_mode="HTML"
+)
 
 @dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
@@ -174,8 +255,7 @@ async def cmd_name(msg: types.Message):
 
 @dp.message(Command("setname"))
 async def admin_set_name(msg: types.Message):
-    if not is_admin(msg.from_user.id):
-        await msg.answer("⛔ Только администратор может менять имена другим участникам.")
+    if not await admin_check(msg):
         return
 
     args = msg.text.split(maxsplit=2)
@@ -225,8 +305,7 @@ from aiogram.types import InputFile
 
 @dp.message(Command("export"))
 async def cmd_export(msg: types.Message):
-    if not is_admin(msg.from_user.id):
-        await msg.answer("⛔ Только админ может экспортировать список.")
+    if not await admin_check(msg):
         return
 
     rows = await asyncio.to_thread(get_members, msg.chat.id)
@@ -291,8 +370,7 @@ async def cmd_find(msg: types.Message):
 
 @dp.message(Command("cleanup"))
 async def cmd_cleanup(msg: types.Message):
-    if not is_admin(msg.from_user.id):
-        await msg.answer("⛔ Только админ может очищать список.")
+    if not await admin_check(msg):
         return
 
     rows = await asyncio.to_thread(get_members, msg.chat.id)
@@ -310,7 +388,6 @@ async def cmd_cleanup(msg: types.Message):
 
     await msg.answer(f"🧹 Очистка завершена!\nУдалено: <b>{len(left_users)}</b> пользователей.", parse_mode="HTML")
 
-
 # ========== AUTO-REGISTER ==========
 
 @dp.message()
@@ -320,7 +397,6 @@ async def auto_register(msg: types.Message):
             await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
         except Exception as e:
             print("Supabase error:", e)
-
 
 # ========== HANDLE USER LEAVING CHAT ==========
 
@@ -333,11 +409,23 @@ async def chat_member_update(event: types.ChatMemberUpdated):
     if new in ("left", "kicked"):
         await asyncio.to_thread(delete_user, event.chat.id, event.from_user.id)
 
-
 # ============ RUN ============
 
 async def main():
     print("BOT STARTED OK")
+
+    # === Регистрируем команды в Telegram ===
+    await bot.set_my_commands([
+        types.BotCommand(command="start", description="Запустить бота"),
+        types.BotCommand(command="list", description="Показать список участников"),
+        types.BotCommand(command="name", description="Установить своё имя"),
+        types.BotCommand(command="find", description="Поиск участника"),
+        types.BotCommand(command="setname", description="Установить имя другому (админ)"),
+        types.BotCommand(command="export", description="Экспорт списка (админ)"),
+        types.BotCommand(command="cleanup", description="Очистка списка (админ)"),
+    ])
+
+    # Стартуем бота
     await dp.start_polling(bot)
 
 
