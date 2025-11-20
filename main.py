@@ -503,39 +503,82 @@ async def cmd_cleanup(msg: types.Message):
 
     rows = await asyncio.to_thread(get_members, msg.chat.id)
     left_users = []
+    updated_users = 0
 
     for row in rows:
-        try:
-            member = await bot.get_chat_member(msg.chat.id, row["user_id"])
-            if member.status in ("left", "kicked"):
-                left_users.append(row["user_id"])
-        except Exception:
-            left_users.append(row["user_id"])
+        uid = row["user_id"]
 
-    await asyncio.to_thread(clear_left_users, msg.chat.id, left_users)
+        try:
+            member = await bot.get_chat_member(msg.chat.id, uid)
+            status = member.status
+        except Exception:
+            # пользователь недоступен в TG → точно нет в чате
+            left_users.append(uid)
+            continue
+
+        # === Пользователь вышел ===
+        if status in ("left", "kicked"):
+            left_users.append(uid)
+            continue
+
+        # === Пользователь в чате → обновляем данные ===
+        tg_user = member.user
+
+        new_username = tg_user.username or ""
+        new_fullname = tg_user.full_name or ""
+
+        # изменения?
+        changed = (
+            row.get("username") != new_username or
+            row.get("full_name") != new_fullname
+        )
+
+        if changed:
+            updated_users += 1
+            try:
+                supabase.table("members").update({
+                    "username": new_username,
+                    "full_name": new_fullname
+                }).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+            except Exception as e:
+                logger.error("Ошибка обновления пользователя %s: %s", uid, e)
+
+    # === Удаляем ушедших ===
+    if left_users:
+        await asyncio.to_thread(clear_left_users, msg.chat.id, left_users)
 
     await msg.answer(
-        f"🧹 Очистка завершена!\nУдалено: <b>{len(left_users)}</b> пользователей.",
+        f"🧹 <b>Очистка завершена!</b>\n"
+        f"Удалено: <b>{len(left_users)}</b>\n"
+        f"Обновлено: <b>{updated_users}</b>",
         parse_mode="HTML"
     )
 
     logger.info(
-        "Очистка завершена: удалено %s пользователей в чате %s",
-        len(left_users),
-        msg.chat.id
+        "Cleanup finished: removed=%s updated=%s chat=%s",
+        len(left_users), updated_users, msg.chat.id
     )
 
 # ========== AUTO-REGISTER ==========
 
 @dp.message()
 async def auto_register(msg: types.Message):
-    if msg.from_user:
-        try:
-            await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
-            logger.info("Обновление/регистрация пользователя %s (%s) в чате %s",
-                        msg.from_user.id, msg.from_user.username, msg.chat.id)
-        except Exception as e:
-            logger.error("Ошибка Supabase при авто-регистрации: %s", e)
+    user = msg.from_user
+    uid = user.id
+    now = time.time()
+
+    # Если обновляли < 60 сек назад — пропускаем
+    last = LAST_UPDATE.get(uid, 0)
+    if now - last < UPDATE_TTL:
+        return
+
+    # Обновляем запись
+    try:
+        await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
+        LAST_UPDATE[uid] = now  # фиксируем время последнего обновления
+        logger.info("Обновление пользователя %s в чате %s", uid, msg.chat.id)
+    except Exception as e:
+        logger.error("Ошибка Supabase при авто-регистрации: %s", e)
 
 # ============ RUN ============
 
