@@ -426,7 +426,6 @@ async def admin_set_name(msg: types.Message):
         f"✨ Имя участника обновлено на <b>{new_name}</b>",
         parse_mode="HTML"
     )
-
 # ========== ADMIN EXPORT CSV ==========
 
 import csv
@@ -444,27 +443,21 @@ async def cmd_export(msg: types.Message):
         await msg.answer("Список пуст, нечего экспортировать.")
         return
 
-    # Создаём CSV-файл в памяти
     output = io.StringIO()
-    writer = csv.writer(output)
 
-    writer.writerow(["№", "Full Name", "Username", "External Name"])
+    # Первая строка как в Telegram
+    output.write("📋 Список участников:\n\n")
 
+    # Формируем строки в ТГ-формате
     for i, row in enumerate(rows, start=1):
-        username = row.get("username") or ""
-        writer.writerow([
-            i,
-            row.get("full_name") or "",
-            f"@{username}" if username else "",
-            row.get("external_name") or "",
-        ])
+        line = format_member_inline(row, i)   # ← та же функция!
+        output.write(line + "\n")
 
-    # переходим на bytes
     csv_bytes = output.getvalue().encode("utf-8")
 
     file = BufferedInputFile(
         file=csv_bytes,
-        filename=f"members_chat_{msg.chat.id}.csv"
+        filename=f"members_chat_{msg.chat.id}.txt"   # лучше TXT, не CSV
     )
 
     await msg.answer_document(file, caption="📄 Экспортирован список участников.")
