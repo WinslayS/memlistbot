@@ -5,6 +5,16 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
 
+import logging
+import time
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+logger = logging.getLogger(__name__)
+
 # ============ ENV ============
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -44,73 +54,116 @@ def upsert_user(chat_id: int, user: types.User, external_name: str | None = None
     if external_name is not None:
         payload["external_name"] = external_name
 
-    return supabase.table("members").upsert(
-        payload,
-        on_conflict="chat_id, user_id"
-    ).execute()
+    try:
+        return supabase.table("members").upsert(
+            payload,
+            on_conflict="chat_id, user_id"
+        ).execute()
+    except Exception as e:
+        logger.error("Supabase upsert_user error: %s", e)
 
 def get_members(chat_id: int):
-    res = (
-        supabase.table("members")
-        .select("*")
-        .eq("chat_id", chat_id)
-        .order("created_at", desc=False)
-        .execute()
-    )
-    return res.data or []
+    try:
+        res = (
+            supabase.table("members")
+            .select("*")
+            .eq("chat_id", chat_id)
+            .order("created_at", desc=False)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        logger.error("Supabase get_members error (chat %s): %s", chat_id, e)
+        return []
 
 def delete_user(chat_id: int, user_id: int):
-    return (
-        supabase.table("members")
-        .delete()
-        .eq("chat_id", chat_id)
-        .eq("user_id", user_id)
-        .execute()
-    )
+    try:
+        supabase.table("members") \
+            .delete() \
+            .eq("chat_id", chat_id) \
+            .eq("user_id", user_id) \
+            .execute()
+        logger.info("Удалён пользователь %s из чата %s", user_id, chat_id)
+
+    except Exception as e:
+        logger.error("Supabase delete_user error (chat %s user %s): %s",
+                     chat_id, user_id, e)
 
 def clear_left_users(chat_id: int, left_user_ids: list[int]):
     for uid in left_user_ids:
-        supabase.table("members").delete().eq("chat_id", chat_id).eq("user_id", uid).execute()
+        try:
+            supabase.table("members") \
+                .delete() \
+                .eq("chat_id", chat_id) \
+                .eq("user_id", uid) \
+                .execute()
 
-# ============ ADMIN CHECKER ============
+            logger.info("Удалён из базы ушедший пользователь %s из чата %s",
+                        uid, chat_id)
+
+        except Exception as e:
+            logger.error("Supabase clear_left_users error (chat %s user %s): %s",
+                         chat_id, uid, e)
+
+
+# ============ ADMIN CHECKER (с кэшем) ============
+
+# chat_id -> (timestamp, set(admin_ids))
+ADMIN_CACHE: dict[int, tuple[float, set[int]]] = {}
+ADMIN_CACHE_TTL = 10.0  # секунды
+
+
+async def get_admin_ids(chat_id: int) -> set[int]:
+    """Возвращает множество ID админов с кэшем на несколько секунд."""
+    now = time.time()
+    cached = ADMIN_CACHE.get(chat_id)
+
+    if cached and now - cached[0] < ADMIN_CACHE_TTL:
+        return cached[1]
+
+    try:
+        admins = await bot.get_chat_administrators(chat_id)
+        admin_ids = {a.user.id for a in admins}
+        ADMIN_CACHE[chat_id] = (now, admin_ids)
+        return admin_ids
+    except Exception as e:
+        logger.error("Ошибка получения админов для чата %s: %s", chat_id, e)
+        return set()
+
 
 async def is_user_admin(msg: types.Message) -> bool:
     """Проверка: пользователь — администратор чата?"""
-    try:
-        admins = await msg.chat.get_administrators()
-        admin_ids = [a.user.id for a in admins]
-        return msg.from_user.id in admin_ids
-    except Exception as e:
-        print("ADMIN USER CHECK ERROR:", e)
-        return False
+    admin_ids = await get_admin_ids(msg.chat.id)
+    return msg.from_user.id in admin_ids
 
 
 async def is_bot_admin(msg: types.Message) -> bool:
-    """Проверка: бот — администратор чата?"""
-    try:
-        admins = await msg.chat.get_administrators()
-        admin_ids = [a.user.id for a in admins]
-        return msg.bot.id in admin_ids
-    except Exception as e:
-        print("ADMIN BOT CHECK ERROR:", e)
-        return False
+    """Проверка: бот — администратор в чате?"""
+    admin_ids = await get_admin_ids(msg.chat.id)
+    return bot.id in admin_ids
+
 
 async def admin_check(msg: types.Message) -> bool:
     """
-    Возвращает True — если всё в порядке.
-    Возвращает False — если команду нужно остановить.
+    Общая проверка для админ-команд.
+    True — можно выполнять команду.
+    False — надо остановиться.
     """
 
-    user_admin = await is_user_admin(msg)
-    bot_admin = await is_bot_admin(msg)
+    # 1) Команда только для групп
+    if msg.chat.type == "private":
+        await msg.answer("❌ Эта команда работает только в групповых чатах.")
+        return False
 
-    # Пользователь не админ
-    if not user_admin:
+    admin_ids = await get_admin_ids(msg.chat.id)
+
+    # 2) Пользователь не админ
+    if msg.from_user.id not in admin_ids:
         await msg.answer("⛔ Эта команда доступна только администраторам.")
         return False
 
-    # Пользователь админ, но бот нет
-    if not bot_admin:
+    # 3) Бот не админ
+    if bot.id not in admin_ids:
         await msg.answer(
             "⚠️ Я не являюсь администратором, поэтому не могу выполнить команду.\n\n"
             "Пожалуйста, выдайте мне право <b>«Добавление администраторов»</b>.",
@@ -118,7 +171,6 @@ async def admin_check(msg: types.Message) -> bool:
         )
         return False
 
-    # Всё хорошо — можно выполнять
     return True
 
 # ============ FORMAT HELPERS ============
@@ -148,13 +200,19 @@ def format_member_inline(row: dict, index: int | None = None) -> str:
         return f"{index}. {full_name}{username_part}{external_part}"
     return f"{full_name}{username_part}{external_part}"
 
-# ============ FIRST MESSAGE ============
+# ============ CHAT MEMBER EVENTS ============
 
 @dp.chat_member()
-async def on_bot_added(event: types.ChatMemberUpdated):
-    if event.new_chat_member.user.id == bot.id and event.new_chat_member.status == "member":
+async def chat_member_events(event: types.ChatMemberUpdated):
+    old = event.old_chat_member.status
+    new = event.new_chat_member.status
+    user = event.new_chat_member.user
+    chat_id = event.chat.id
+
+    # 1) Бота добавили в чат
+    if user.id == bot.id and new in ("member", "administrator"):
         await bot.send_message(
-            event.chat.id,
+            chat_id,
             "🤖 <b>Бот подключён!</b>\n\n"
             "Чтобы всё работало корректно:\n"
             "• дайте мне право <b>«Добавление администраторов»</b>\n"
@@ -163,28 +221,21 @@ async def on_bot_added(event: types.ChatMemberUpdated):
             "После этого все функции будут работать корректно.",
             parse_mode="HTML"
         )
+        return
 
-# ============ AUTO ADD NEW CHAT MEMBERS ============
-
-@dp.chat_member()
-async def on_user_join(event: types.ChatMemberUpdated):
-    old = event.old_chat_member.status
-    new = event.new_chat_member.status
-
-    # Новичок вошёл в чат
+    # 2) Обычный пользователь зашёл в чат
     if old in ("left", "kicked") and new in ("member", "administrator"):
-        user = event.new_chat_member.user
-
-        # игнорируем анонимных админов и ботов
+        # игнорируем анонимных / ботов
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
-        # добавляем человека в базу
-        await asyncio.to_thread(
-            upsert_user,
-            event.chat.id,
-            user
-        )
+        await asyncio.to_thread(upsert_user, chat_id, user)
+        logger.info("Пользователь %s (%s) добавлен в список чата %s", user.id, user.username, chat_id)
+
+    # 3) Пользователь ушёл или был кикнут
+    if new in ("left", "kicked"):
+        await asyncio.to_thread(delete_user, chat_id, user.id)
+        logger.info("Пользователь %s удалён из списка чата %s", user.id, chat_id)
 
 # ============ COMMANDS ============
 
@@ -230,17 +281,24 @@ async def cmd_list(msg: types.Message):
 
 @dp.message(Command("name"))
 async def cmd_name(msg: types.Message):
-    # Разбиваем текст: "/name Kvane"
     args = msg.text.split(maxsplit=1)
 
-    # Если аргумента нет
     if len(args) < 2:
         await msg.answer("✏️ Напиши имя после команды. Пример: /name Kvane")
         return
 
     external_name = args[1].strip()
 
-    # Обновляем / создаём пользователя с external_name
+    # пустое имя (только пробелы)
+    if not external_name:
+        await msg.answer("❌ Имя не может быть пустым или состоять только из пробелов.")
+        return
+
+    # лимит длины 100 символов
+    if len(external_name) > 100:
+        await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
+        return
+
     await asyncio.to_thread(
         upsert_user,
         msg.chat.id,
@@ -266,6 +324,14 @@ async def admin_set_name(msg: types.Message):
         return
 
     target, new_name = args[1], args[2].strip()
+
+    if not new_name:
+        await msg.answer("❌ Имя не может быть пустым.")
+        return
+
+    if len(new_name) > 100:
+        await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
+        return
 
     if target.startswith("@"):
         target_username = target[1:]
@@ -298,6 +364,11 @@ async def admin_set_name(msg: types.Message):
     supabase.table("members").update({"external_name": new_name}).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
 
     await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
+    
+    logger.info(
+        "Админ %s изменил имя пользователю %s на '%s' в чате %s",
+        msg.from_user.id, uid, new_name, msg.chat.id
+    )
 
 # ========== ADMIN EXPORT CSV ==========
 
@@ -388,7 +459,16 @@ async def cmd_cleanup(msg: types.Message):
 
     await asyncio.to_thread(clear_left_users, msg.chat.id, left_users)
 
-    await msg.answer(f"🧹 Очистка завершена!\nУдалено: <b>{len(left_users)}</b> пользователей.", parse_mode="HTML")
+    await msg.answer(
+        f"🧹 Очистка завершена!\nУдалено: <b>{len(left_users)}</b> пользователей.",
+        parse_mode="HTML"
+    )
+
+    logger.info(
+        "Очистка завершена: удалено %s пользователей в чате %s",
+        len(left_users),
+        msg.chat.id
+    )
 
 # ========== AUTO-REGISTER ==========
 
@@ -397,19 +477,10 @@ async def auto_register(msg: types.Message):
     if msg.from_user:
         try:
             await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
+            logger.info("Обновление/регистрация пользователя %s (%s) в чате %s",
+                        msg.from_user.id, msg.from_user.username, msg.chat.id)
         except Exception as e:
-            print("Supabase error:", e)
-
-# ========== HANDLE USER LEAVING CHAT ==========
-
-@dp.chat_member()
-async def chat_member_update(event: types.ChatMemberUpdated):
-    old = event.old_chat_member.status
-    new = event.new_chat_member.status
-
-    # Если пользователь ушёл или был кикнут
-    if new in ("left", "kicked"):
-        await asyncio.to_thread(delete_user, event.chat.id, event.from_user.id)
+            logger.error("Ошибка Supabase при авто-регистрации: %s", e)
 
 # ============ RUN ============
 
