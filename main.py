@@ -341,51 +341,64 @@ async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    args = msg.text.split(maxsplit=2)
-    if len(args) < 3:
+    args = msg.text.split(maxsplit=1)
+
+    if msg.reply_to_message:
+        # ===============================
+        #   СПОСОБ №1 — ЧЕРЕЗ REPLY
+        # ===============================
+        if len(args) < 2:
+            await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
+            return
+
+        new_name = args[1].strip()
+        target_user = msg.reply_to_message.from_user
+
+        supabase.table("members").upsert({
+            "chat_id": msg.chat.id,
+            "user_id": target_user.id,
+            "username": target_user.username or "",
+            "full_name": target_user.full_name or "",
+            "external_name": new_name
+        }, on_conflict="chat_id,user_id").execute()
+
         await msg.answer(
-            "Формат:\n"
+            f"✨ Имя участника обновлено на <b>{new_name}</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    # === Если reply нет -> классическая логика ===
+    if len(args) < 2:
+        await msg.answer(
+            "Форматы:\n"
             "/setname @username Имя\n"
             "/setname user_id Имя\n"
-            "/setname Имя_пользователя Имя"
+            "ИЛИ ответом на сообщение:\n"
+            "/setname Имя"
         )
+        return
+
+    args = msg.text.split(maxsplit=2)
+    if len(args) < 3:
+        await msg.answer("Нужно указать имя: /setname @username Новый_имя")
         return
 
     target, new_name = args[1], args[2].strip()
 
-    if not new_name:
-        await msg.answer("❌ Имя не может быть пустым.")
-        return
-
-    if len(new_name) > 100:
-        await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
-        return
-
     members = await asyncio.to_thread(get_members, msg.chat.id)
-
     found_user = None
 
-    # 1️⃣ Если начинается с @ → username
     if target.startswith("@"):
         username = target[1:].lower()
-        for m in members:
-            if m.get("username", "").lower() == username:
-                found_user = m
-                break
+        found_user = next((m for m in members if m["username"].lower() == username), None)
 
-    # 2️⃣ Если число → user_id
     elif target.isdigit():
         uid = int(target)
-        for m in members:
-            if m.get("user_id") == uid:
-                found_user = m
-                break
+        found_user = next((m for m in members if m["user_id"] == uid), None)
 
-    # 3️⃣ Иначе → считаем, что это full_name
     else:
-        lower_name = target.lower()
-        candidates = [m for m in members if m.get("full_name", "").lower() == lower_name]
-
+        candidates = [m for m in members if m["full_name"].lower() == target.lower()]
         if len(candidates) == 1:
             found_user = candidates[0]
         elif len(candidates) > 1:
@@ -396,21 +409,11 @@ async def admin_set_name(msg: types.Message):
         await msg.answer("❌ Пользователь не найден.")
         return
 
-    # обновляем
-    uid = found_user["user_id"]
-
-    supabase.table("members") \
-        .update({"external_name": new_name}) \
-        .eq("chat_id", msg.chat.id) \
-        .eq("user_id", uid) \
-        .execute()
+    supabase.table("members").update({
+        "external_name": new_name
+    }).eq("chat_id", msg.chat.id).eq("user_id", found_user["user_id"]).execute()
 
     await msg.answer(f"✨ Имя участника обновлено на <b>{new_name}</b>", parse_mode="HTML")
-
-    logger.info(
-        "Админ %s изменил имя пользователю %s на '%s' в чате %s",
-        msg.from_user.id, uid, new_name, msg.chat.id
-    )
 
 # ========== ADMIN EXPORT CSV ==========
 
