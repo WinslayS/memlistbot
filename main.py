@@ -161,7 +161,7 @@ async def on_bot_added(event: types.ChatMemberUpdated):
             "• отключите <b>анонимность администраторов</b>\n"
             "• команды пишите <b>без пробела после слэша</b> — <code>/setname</code>, <code>/export</code>\n\n"
             "После этого все функции будут работать корректно.",
-            parse_mode=\"HTML\"
+            parse_mode="HTML"
         )
 
 # ============ AUTO ADD NEW CHAT MEMBERS ============
