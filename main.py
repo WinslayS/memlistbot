@@ -341,7 +341,7 @@ async def cmd_help(msg: types.Message):
             "• <code>[@]</code> — username участника\n"
             "• <code>[имя]</code> — любое текстовое имя\n\n"
         ),
-        parse_mode=\"HTML\"
+        parse_mode="HTML"
     )
 
 @dp.message(Command("list"))
