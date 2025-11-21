@@ -61,7 +61,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 LAST_UPDATE: dict[int, float] = {}
 
 # Время обновления (рекомендуется 60 секунд)
-UPDATE_TTL = 60
+UPDATE_TTL = 1
 
 # ============ DB HELPERS ============
 
