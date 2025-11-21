@@ -138,16 +138,14 @@ def clear_left_users(chat_id: int, left_user_ids: list[int]):
 
 # ========== HELPER: SEND LONG MESSAGE ==========
 
-async def send_long_message(chat_id: int, header: str, text: str):
-    """
-    Отправляет длинный список, автоматически разбивая на части.
-    header — строка типа "📋 Список участников"
-    """
+async def send_long_message(msg: types.Message, header: str, text: str):
+    chat_id = msg.chat.id
+    thread_id = msg.message_thread_id
+
     MAX_LEN = 4096
 
     parts = []
     while len(text) > MAX_LEN:
-        # Ищем безопасную точку разрыва — по \n
         split_pos = text.rfind("\n", 0, MAX_LEN)
         if split_pos == -1:
             split_pos = MAX_LEN
@@ -162,7 +160,8 @@ async def send_long_message(chat_id: int, header: str, text: str):
         await bot.send_message(
             chat_id,
             f"<b>{title}</b>\n\n{part}",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            message_thread_id=thread_id
         )
 
 # ============ ADMIN CHECKER (с кэшем) ============
@@ -312,6 +311,11 @@ async def chat_member_events(event: types.ChatMemberUpdated):
                     "📖 <b>Обозначения:</b>\n"
                     "• <code>[@]</code> — username участника\n"
                     "• <code>[имя]</code> — любое текстовое имя\n\n"
+                    "📖 <b>Сортировка (добавляется к /list /export:</b>\n"
+                    "• <b>ничего</b> — по дате (name)\n"
+                    "• <b>n</b> — по имени (name)\n"
+                    "• <b>u</b> — по @username\n"
+                    "• <b>e</b> — по заданному имени (external_name)\n"
                 ),
                 parse_mode="HTML"
             )
@@ -368,6 +372,11 @@ async def cmd_help(msg: types.Message):
             "📖 <b>Обозначения:</b>\n"
             "• <code>[@]</code> — username участника\n"
             "• <code>[имя]</code> — любое текстовое имя\n\n"
+            "📖 <b>Сортировка (добавляется к /list /export:</b>\n"
+            "• <b>ничего</b> — по дате (name)\n"
+            "• <b>n</b> — по имени (name)\n"
+            "• <b>u</b> — по @username\n"
+            "• <b>e</b> — по заданному имени (external_name)\n"
         ),
         parse_mode="HTML"
     )
@@ -381,12 +390,26 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
+    # === определяем сортировку ===
+    args = msg.text.split()
+    sort_mode = args[1].lower() if len(args) > 1 else None
+
+    if sort_mode in ["name", "n"]:               # сортировка по full_name
+        rows.sort(key=lambda r: (r.get("full_name") or "").lower())
+
+    elif sort_mode in ["username", "user", "u"]: # сортировка по username
+        rows.sort(key=lambda r: (r.get("username") or "").lower())
+
+    elif sort_mode in ["external", "ext", "e"]:  # сортировка по external_name
+        rows.sort(key=lambda r: (r.get("external_name") or "").lower())
+        
+    # === создаём строки ===
     lines = []
     for i, row in enumerate(rows, start=1):
         lines.append(format_member_inline(row, i))
 
     full_text = "\n".join(lines)
-    await send_long_message(msg.chat.id, "📋 Список участников", full_text)
+    await send_long_message(msg, "📋 Список участников", full_text)
 
 # ========== NAME ==========
 
@@ -514,6 +537,7 @@ async def admin_set_name(msg: types.Message):
         f"✨ Имя участника обновлено на <b>{new_name}</b>",
         parse_mode="HTML"
     )
+
 # ========== ADMIN EXPORT CSV ==========
 
 import csv
@@ -531,21 +555,32 @@ async def cmd_export(msg: types.Message):
         await msg.answer("Список пуст, нечего экспортировать.")
         return
 
-    output = io.StringIO()
+    # === определяем сортировку ===
+    args = msg.text.split()
+    sort_mode = args[1].lower() if len(args) > 1 else None
 
-    # Первая строка как в Telegram
+    if sort_mode in ["name", "n"]:               # сортировка по full_name
+        rows.sort(key=lambda r: (r.get("full_name") or "").lower())
+
+    elif sort_mode in ["username", "user", "u"]: # сортировка по username
+        rows.sort(key=lambda r: (r.get("username") or "").lower())
+
+    elif sort_mode in ["external", "ext", "e"]:  # сортировка по external_name
+        rows.sort(key=lambda r: (r.get("external_name") or "").lower())
+
+    # === формируем TXT-файл ===
+    output = io.StringIO()
     output.write("📋 Список участников:\n\n")
 
-    # Формируем строки в ТГ-формате
     for i, row in enumerate(rows, start=1):
-        line = format_member_inline(row, i)   # ← та же функция!
+        line = format_member_inline(row, i)
         output.write(line + "\n")
 
     csv_bytes = output.getvalue().encode("utf-8")
 
     file = BufferedInputFile(
         file=csv_bytes,
-        filename=f"members_chat_{msg.chat.id}.txt"   # лучше TXT, не CSV
+        filename=f"members_chat_{msg.chat.id}.txt"
     )
 
     await msg.answer_document(file, caption="📄 Экспортирован список участников.")
@@ -576,12 +611,12 @@ async def cmd_find(msg: types.Message):
         await msg.answer("❌ Никто не найден.")
         return
 
-    lines = ["🔎 <b>Результаты поиска:</b>\n"]
+    lines = []
     for i, row in enumerate(results, start=1):
         lines.append(format_member_inline(row, i))
 
     full_text = "\n".join(lines)
-    await send_long_message(msg.chat.id, "🔎 Результаты поиска", full_text)
+    await send_long_message(msg, "🔎 Результаты поиска", full_text)
 
 # ========== CLEANUP (удаление ушедших) ==========
 
