@@ -233,6 +233,8 @@ def format_member_inline(row: dict, index: int | None = None) -> str:
 
 # ============ CHAT MEMBER EVENTS ============
 
+WELCOME_SENT = set()
+
 @dp.chat_member()
 async def chat_member_events(event: types.ChatMemberUpdated):
     old = event.old_chat_member.status
@@ -242,6 +244,8 @@ async def chat_member_events(event: types.ChatMemberUpdated):
 
     # 1) Бота добавили в чат
     if user.id == bot.id and new in ("member", "administrator"):
+
+        # Сообщение №1 — стандартное, как раньше
         await bot.send_message(
             chat_id,
             "🤖 <b>Бот подключён!</b>\n\n"
@@ -252,7 +256,39 @@ async def chat_member_events(event: types.ChatMemberUpdated):
             "После этого все функции будут работать корректно.",
             parse_mode="HTML"
         )
-        return
+
+        # Сообщение №2 — HELP, только 1 раз для этого чата
+        if chat_id not in WELCOME_SENT:
+            WELCOME_SENT.add(chat_id)
+
+            await bot.send_message(
+                chat_id,
+                (
+                    "👋 <b>Привет! Вот краткая справка по боту:</b>\n\n"
+                    "📌 <b>Команды:</b>\n"
+                    "/list — показать список участников\n"
+                    "/name [имя] — установить своё имя\n"
+                    "/find [имя/@] — поиск участника\n"
+                    "/setname [@] [имя] — назначить имя другому (админ)\n"
+                    "/export — экспорт списка (админ)\n"
+                    "/cleanup — очистить список ушедших (админ)\n\n"
+                    "📖 <b>Как добавить участника:</b>\n"
+                    "• Если есть username (@):\n"
+                    "  <code>/setname @username Имя</code>\n\n"
+                    "• Если username нет:\n"
+                    "  1) участник пишет любое сообщение в чат\n"
+                    "  2) админ отвечает на это сообщение:\n"
+                    "     <code>/setname Имя</code>\n\n"
+                    "• Если участник хочет сам установить имя:\n"
+                    "  <code>/name Имя</code>\n"
+                    "📖 <b>Обозначения:</b>\n"
+                    "• <code>[@]</code> — username участника\n"
+                    "• <code>[имя]</code> — любое текстовое имя\n\n"
+                ),
+                parse_mode="HTML"
+            )
+
+        return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
 
     # 2) Обычный пользователь зашёл в чат
     if old in ("left", "kicked") and new in ("member", "administrator"):
@@ -261,17 +297,23 @@ async def chat_member_events(event: types.ChatMemberUpdated):
             return
 
         await asyncio.to_thread(upsert_user, chat_id, user)
-        logger.info("Пользователь %s (%s) добавлен в список чата %s", user.id, user.username, chat_id)
+        logger.info(
+            "Пользователь %s (%s) добавлен в список чата %s",
+            user.id, user.username, chat_id
+        )
 
     # 3) Пользователь ушёл или был кикнут
     if new in ("left", "kicked"):
         await asyncio.to_thread(delete_user, chat_id, user.id)
-        logger.info("Пользователь %s удалён из списка чата %s", user.id, chat_id)
+        logger.info(
+            "Пользователь %s удалён из списка чата %s",
+            user.id, chat_id
+        )
 
 # ============ COMMANDS ============
 
-@dp.message(Command("start"))
-async def cmd_start(msg: types.Message):
+@dp.message(Command("help"))
+async def cmd_help(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
 
     role = "Админ" if await is_user_admin(msg) else "Участник"
@@ -286,11 +328,20 @@ async def cmd_start(msg: types.Message):
             "/setname [@] [имя] — назначить имя другому (админ)\n"
             "/export — экспорт списка (админ)\n"
             "/cleanup — очистить список ушедших (админ)\n\n"
+            "📖 <b>Как добавить участника в список:</b>\n"
+            "• Если у участника <b>есть username (@)</b> — используйте:\n"
+            "  <code>/setname @username Имя</code>\n\n"
+            "• Если <b>username нет</b>, его можно добавить <u>только</u> так:\n"
+            "  1) он должен написать любое сообщение в чат\n"
+            "  2) вы отвечаете на его сообщение командой:\n"
+            "     <code>/setname Имя</code>\n\n"
+            "• Если участник хочет сам добавить себе имя — он пишет:\n"
+            "  <code>/name Имя</code>\n"
             "📖 <b>Обозначения:</b>\n"
             "• <code>[@]</code> — username участника\n"
             "• <code>[имя]</code> — любое текстовое имя\n\n"
         ),
-        parse_mode="HTML"
+        parse_mode=\"HTML\"
     )
 
 @dp.message(Command("list"))
@@ -595,7 +646,7 @@ async def main():
 
     # === Регистрируем команды в Telegram ===
     await bot.set_my_commands([
-        types.BotCommand(command="start", description="Запустить бота"),
+        types.BotCommand(command="help", description="Помощь / команды"),
         types.BotCommand(command="list", description="Показать список участников"),
         types.BotCommand(command="name", description="Установить своё имя"),
         types.BotCommand(command="find", description="Поиск участника"),
