@@ -381,7 +381,7 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
-    lines = ["📋 <b>Список участников:</b>\n"]
+    lines = []
     for i, row in enumerate(rows, start=1):
         lines.append(format_member_inline(row, i))
 
