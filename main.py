@@ -55,6 +55,14 @@ dp = Dispatcher()
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# ================= CACHING FOR AUTO-REGISTER =================
+
+# user_id -> last update timestamp
+LAST_UPDATE: dict[int, float] = {}
+
+# Время обновления (рекомендуется 60 секунд)
+UPDATE_TTL = 60
+
 # ============ DB HELPERS ============
 
 def upsert_user(chat_id: int, user: types.User, external_name: str | None = None):
