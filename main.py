@@ -136,6 +136,34 @@ def clear_left_users(chat_id: int, left_user_ids: list[int]):
             logger.error("Supabase clear_left_users error (chat %s user %s): %s",
                          chat_id, uid, e)
 
+# ========== HELPER: SEND LONG MESSAGE ==========
+
+async def send_long_message(chat_id: int, header: str, text: str):
+    """
+    Отправляет длинный список, автоматически разбивая на части.
+    header — строка типа "📋 Список участников"
+    """
+    MAX_LEN = 4096
+
+    parts = []
+    while len(text) > MAX_LEN:
+        # Ищем безопасную точку разрыва — по \n
+        split_pos = text.rfind("\n", 0, MAX_LEN)
+        if split_pos == -1:
+            split_pos = MAX_LEN
+        parts.append(text[:split_pos])
+        text = text[split_pos:].lstrip()
+    parts.append(text)
+
+    total = len(parts)
+
+    for i, part in enumerate(parts, start=1):
+        title = f"{header} ({i}/{total})"
+        await bot.send_message(
+            chat_id,
+            f"<b>{title}</b>\n\n{part}",
+            parse_mode="HTML"
+        )
 
 # ============ ADMIN CHECKER (с кэшем) ============
 
@@ -357,7 +385,8 @@ async def cmd_list(msg: types.Message):
     for i, row in enumerate(rows, start=1):
         lines.append(format_member_inline(row, i))
 
-    await msg.answer("\n".join(lines), parse_mode="HTML")
+    full_text = "\n".join(lines)
+    await send_long_message(msg.chat.id, "📋 Список участников", full_text)
 
 # ========== NAME ==========
 
@@ -551,7 +580,8 @@ async def cmd_find(msg: types.Message):
     for i, row in enumerate(results, start=1):
         lines.append(format_member_inline(row, i))
 
-    await msg.answer("\n".join(lines), parse_mode="HTML")
+    full_text = "\n".join(lines)
+    await send_long_message(msg.chat.id, "🔎 Результаты поиска", full_text)
 
 # ========== CLEANUP (удаление ушедших) ==========
 
