@@ -259,6 +259,49 @@ def format_member_inline(row: dict, index: int | None = None) -> str:
 
     return f"{full_name}{username_part}{external_part}{role_part}"
 
+# ============ USER BY TARGET ============
+
+async def find_user_by_target(chat_id: int, target: str):
+    """
+    target может быть:
+    - @username
+    - user_id
+    - full_name
+    - external_name
+    """
+
+    rows = await asyncio.to_thread(get_members, chat_id)
+    target = target.strip()
+
+    # 1) поиск по username (@name)
+    if target.startswith("@"):
+        uname = target[1:].lower()
+        return next(
+            (m for m in rows if (m.get("username") or "").lower() == uname),
+            None
+        )
+
+    # 2) поиск по user_id
+    if target.isdigit():
+        uid = int(target)
+        return next((m for m in rows if m.get("user_id") == uid), None)
+
+    # 3) поиск по full_name и external_name
+    lower = target.lower()
+    matches = [
+        m for m in rows
+        if (m.get("full_name") or "").lower() == lower
+        or (m.get("external_name") or "").lower() == lower
+    ]
+
+    if len(matches) == 1:
+        return matches[0]
+
+    if len(matches) > 1:
+        return "MULTIPLE"
+
+    return None
+    
 # ============ CHAT MEMBER EVENTS ============
 
 WELCOME_SENT = set()
@@ -470,15 +513,26 @@ async def admin_set_name(msg: types.Message):
             return
 
         new_name = args[1].strip()
+        if not new_name:
+            await msg.answer("❌ Имя не может быть пустым.")
+            return
 
         # Добавляем или обновляем пользователя
-        supabase.table("members").upsert({
-            "chat_id": msg.chat.id,
-            "user_id": target_user.id,
-            "username": target_user.username or "",
-            "full_name": target_user.full_name or "",
-            "external_name": new_name
-        }, on_conflict="chat_id,user_id").execute()
+        try:
+            supabase.table("members").upsert(
+                {
+                    "chat_id": msg.chat.id,
+                    "user_id": target_user.id,
+                    "username": target_user.username or "",
+                    "full_name": target_user.full_name or "",
+                    "external_name": new_name,
+                },
+                on_conflict="chat_id, user_id"
+            ).execute()
+        except Exception as e:
+            logger.error("Supabase setname(reply) error: %s", e)
+            await msg.answer("⚠ Произошла ошибка при сохранении имени.")
+            return
 
         await msg.answer(
             f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
@@ -490,8 +544,7 @@ async def admin_set_name(msg: types.Message):
     #     СПОСОБ №2 — @username / id / имя
     # ===============================
 
-    args = msg.text.split()
-
+    args = msg.text.split(maxsplit=2)
     if len(args) < 3:
         await msg.answer(
             "Форматы:\n"
@@ -502,80 +555,40 @@ async def admin_set_name(msg: types.Message):
             "/setname НовоеИмя"
         )
         return
-        
-    # правильное получение target и new_name
+
     target = args[1].strip()
-    new_name = " ".join(args[2:]).strip()
+    new_name = args[2].strip()
 
-    # убираем @username из new_name, если он туда попал
-    if new_name.startswith("@"):
-        parts = new_name.split(maxsplit=1)
-        if len(parts) == 2:
-            new_name = parts[1]
+    if not new_name:
+        await msg.answer("❌ Имя не может быть пустым.")
+        return
 
-    members = await asyncio.to_thread(get_members, msg.chat.id)
+    # ищем пользователя через общий хелпер
+    found_user = await find_user_by_target(msg.chat.id, target)
 
-    found_user = None
-
-    # 1️⃣ username
-    if target.startswith("@"):
-        uname = target[1:].lower()
-        found_user = next((m for m in members if (m.get("username") or "").lower() == uname), None)
-
-    # 2️⃣ user_id
-    elif target.isdigit():
-        uid = int(target)
-        found_user = next((m for m in members if m.get("user_id") == uid), None)
-
-    # 3️⃣ full_name
-    else:
-        name_lower = target.lower()
-        candidates = [m for m in members if (m.get("full_name") or "").lower() == name_lower]
-
-        if len(candidates) == 1:
-            found_user = candidates[0]
-        elif len(candidates) > 1:
-            await msg.answer("⚠ Найдено несколько участников с таким именем — уточните.")
-            return
+    if found_user == "MULTIPLE":
+        await msg.answer("⚠ Найдено несколько участников с таким именем — уточните.")
+        return
 
     if not found_user:
-        await msg.answer("❌ Пользователь не найден в базе. Используйте reply на его сообщение.")
+        await msg.answer("❌ Пользователь не найден в базе. Используйте ответом на его сообщение.")
         return
 
     uid = found_user["user_id"]
 
-    supabase.table("members").update({"external_name": new_name}).eq(
-        "chat_id", msg.chat.id
-    ).eq("user_id", uid).execute()
+    try:
+        supabase.table("members").update(
+            {"external_name": new_name}
+        ).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+    except Exception as e:
+        logger.error("Supabase setname(update) error: %s", e)
+        await msg.answer("⚠ Произошла ошибка при обновлении имени.")
+        return
 
     await msg.answer(
         f"✨ Имя участника обновлено на <b>{new_name}</b>",
         parse_mode="HTML"
     )
-    
-# ========== USER ADD ==========
-
-@dp.message(Command("add"))
-async def cmd_add(msg: types.Message):
-    args = msg.text.split(maxsplit=1)
-
-    if len(args) < 2:
-        await msg.answer("Напиши роль после команды. Пример:\n/add Руководитель")
-        return
-
-    role = args[1].strip()
-    if not role:
-        await msg.answer("❌ Роль не может быть пустой.")
-        return
-
-    await asyncio.to_thread(
-        upsert_user,
-        msg.chat.id,
-        msg.from_user,
-        extra_role=role
-    )
-
-    await msg.answer(f"✨ Роль установлена: <b>{role}</b>", parse_mode="HTML")
 
 # ========== ADMIN ADDROLE ==========
 
@@ -584,22 +597,35 @@ async def admin_add_role(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    # --- 1) REPLY ---
+    # --- 1) REPLY-РЕЖИМ ---
     if msg.reply_to_message:
         target = msg.reply_to_message.from_user
         args = msg.text.split(maxsplit=1)
+
         if len(args) < 2:
             await msg.answer("Напишите роль. Пример:\n/addrole Руководитель")
             return
 
         role = args[1].strip()
-        supabase.table("members").upsert({
-            "chat_id": msg.chat.id,
-            "user_id": target.id,
-            "username": target.username or "",
-            "full_name": target.full_name or "",
-            "extra_role": role
-        }, on_conflict="chat_id,user_id").execute()
+        if not role:
+            await msg.answer("❌ Роль не может быть пустой.")
+            return
+
+        try:
+            supabase.table("members").upsert(
+                {
+                    "chat_id": msg.chat.id,
+                    "user_id": target.id,
+                    "username": target.username or "",
+                    "full_name": target.full_name or "",
+                    "extra_role": role,
+                },
+                on_conflict="chat_id, user_id"
+            ).execute()
+        except Exception as e:
+            logger.error("Supabase addrole(reply) error: %s", e)
+            await msg.answer("⚠ Произошла ошибка при сохранении роли.")
+            return
 
         await msg.answer(
             f"✨ Роль участника <b>{target.full_name}</b> обновлена на <b>{role}</b>",
@@ -607,7 +633,7 @@ async def admin_add_role(msg: types.Message):
         )
         return
 
-    # --- 2) Через текст ---
+    # --- 2) РЕЖИМ ЧЕРЕЗ ТЕКСТ ---
     args = msg.text.split(maxsplit=2)
     if len(args) < 3:
         await msg.answer(
@@ -620,30 +646,19 @@ async def admin_add_role(msg: types.Message):
         )
         return
 
-    target, role = args[1].strip(), args[2].strip()
-    members = await asyncio.to_thread(get_members, msg.chat.id)
+    target = args[1].strip()
+    role = args[2].strip()
 
-    found_user = None
+    if not role:
+        await msg.answer("❌ Роль не может быть пустой.")
+        return
 
-    # @username
-    if target.startswith("@"):
-        uname = target[1:].lower()
-        found_user = next((m for m in members if (m.get("username") or "").lower() == uname), None)
+    # ищем пользователя через общий хелпер
+    found_user = await find_user_by_target(msg.chat.id, target)
 
-    # user_id
-    elif target.isdigit():
-        uid = int(target)
-        found_user = next((m for m in members if m.get("user_id") == uid), None)
-
-    # full name
-    else:
-        name_lower = target.lower()
-        candidates = [m for m in members if (m.get("full_name") or "").lower() == name_lower]
-        if len(candidates) == 1:
-            found_user = candidates[0]
-        elif len(candidates) > 1:
-            await msg.answer("⚠ Найдено несколько человек с таким именем — уточните.")
-            return
+    if found_user == "MULTIPLE":
+        await msg.answer("⚠ Найдено несколько человек с таким именем — уточните.")
+        return
 
     if not found_user:
         await msg.answer("❌ Пользователь не найден.")
@@ -651,9 +666,14 @@ async def admin_add_role(msg: types.Message):
 
     uid = found_user["user_id"]
 
-    supabase.table("members").update({"extra_role": role}).eq(
-        "chat_id", msg.chat.id
-    ).eq("user_id", uid).execute()
+    try:
+        supabase.table("members").update(
+            {"extra_role": role}
+        ).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+    except Exception as e:
+        logger.error("Supabase addrole(update) error: %s", e)
+        await msg.answer("⚠ Произошла ошибка при обновлении роли.")
+        return
 
     await msg.answer(
         f"✨ Роль участника обновлена на <b>{role}</b>",
