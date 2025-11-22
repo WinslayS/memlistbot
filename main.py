@@ -303,7 +303,9 @@ async def chat_member_events(event: types.ChatMemberUpdated):
                     "/find [имя/@] — поиск участника\n"
                     "/setname [@] [имя] — назначить имя другому (админ)\n"
                     "/export — экспорт списка (админ)\n"
-                    "/cleanup — очистить список ушедших (админ)\n\n"
+                    "/cleanup — очистить список ушедших (админ)\n"
+                    "/add [роль] — установить себе роль (участник)\n"
+                    "/addrole [@] [роль] — назначить роль другому участнику (админ)\n\n"
                     "📖 <b>Как добавить участника:</b>\n"
                     "• Если есть username (@) в базе данных (автоматически при заходе):\n"
                     "  <code>/setname @username Имя</code>\n\n"
@@ -364,7 +366,9 @@ async def cmd_help(msg: types.Message):
             "/find [имя/@] — поиск участника\n"
             "/setname [@] [имя] — назначить имя другому (админ)\n"
             "/export — экспорт списка (админ)\n"
-            "/cleanup — очистить список ушедших (админ)\n\n"
+            "/cleanup — очистить список ушедших (админ)\n"
+            "/add [роль] — установить себе роль (участник)\n"
+            "/addrole [@] [роль] — назначить роль другому участнику (админ)\n\n"
             "📖 <b>Как добавить участника:</b>\n"
             "• Если есть username (@) в базе данных (автоматически при заходе):\n"
             "  <code>/setname @username Имя</code>\n\n"
@@ -821,15 +825,17 @@ async def main():
     print("BOT STARTED OK")
 
     # === Регистрируем команды в Telegram ===
-    await bot.set_my_commands([
-        types.BotCommand(command="help", description="Помощь / команды"),
-        types.BotCommand(command="list", description="Показать список участников"),
-        types.BotCommand(command="name", description="Установить своё имя"),
-        types.BotCommand(command="find", description="Поиск участника"),
-        types.BotCommand(command="setname", description="Установить имя другому (админ)"),
-        types.BotCommand(command="export", description="Экспорт списка (админ)"),
-        types.BotCommand(command="cleanup", description="Очистка списка (админ)"),
-    ])
+await bot.set_my_commands([
+    types.BotCommand(command="help", description="Помощь / команды"),
+    types.BotCommand(command="list", description="Показать список участников"),
+    types.BotCommand(command="name", description="Установить своё имя"),
+    types.BotCommand(command="add", description="Установить себе роль"),
+    types.BotCommand(command="find", description="Поиск участника"),
+    types.BotCommand(command="setname", description="Установить имя другому (админ)"),
+    types.BotCommand(command="addrole", description="Назначить роль участнику (админ)"),
+    types.BotCommand(command="export", description="Экспорт списка (админ)"),
+    types.BotCommand(command="cleanup", description="Очистка списка (админ)"),
+])
 
     # Стартуем бота
     await dp.start_polling(bot)
