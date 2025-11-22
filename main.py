@@ -495,6 +495,8 @@ async def admin_set_name(msg: types.Message):
 
     args = msg.text.split()
 
+args = msg.text.split()
+
     if len(args) < 3:
         await msg.answer(
             "Форматы:\n"
@@ -505,9 +507,16 @@ async def admin_set_name(msg: types.Message):
             "/setname НовоеИмя"
         )
         return
+        
+    # правильное получение target и new_name
+    target = args[1].strip()
+    new_name = " ".join(args[2:]).strip()
 
-        target = args[1].strip()
-        new_name = " ".join(args[2:]).strip()
+    # убираем @username из new_name, если он туда попал
+    if new_name.startswith("@"):
+        parts = new_name.split(maxsplit=1)
+        if len(parts) == 2:
+            new_name = parts[1]
 
     members = await asyncio.to_thread(get_members, msg.chat.id)
 
