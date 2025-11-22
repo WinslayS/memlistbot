@@ -65,15 +65,13 @@ UPDATE_TTL = 60
 
 # ============ DB HELPERS ============
 
-def upsert_user(chat_id: int, user: types.User, external_name: str | None = None):
-
-    # === SKIP Anonymous Admin ===
+def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=None):
     if (
         user.username == "GroupAnonymousBot"
-        or user.is_bot and user.id == chat_id
-        or user.full_name == "Group"  # иногда Telegram отдает так
+        or (user.is_bot and user.id == chat_id)
+        or user.full_name == "Group"
     ):
-        return  # просто не записываем в базу
+        return
 
     payload = {
         "chat_id": chat_id,
@@ -84,6 +82,9 @@ def upsert_user(chat_id: int, user: types.User, external_name: str | None = None
 
     if external_name is not None:
         payload["external_name"] = external_name
+
+    if extra_role is not None:
+        payload["extra_role"] = extra_role
 
     try:
         return supabase.table("members").upsert(
@@ -245,18 +246,21 @@ def make_silent_username(username: str) -> str:
 def format_member_inline(row: dict, index: int | None = None) -> str:
     """
     Формат одной строки:
-    1. Андрей, (@Bob123) - Лучший
+    1. Андрей (@andre) — проверка — глава смены
     """
     full_name = row.get("full_name") or "Без имени"
     username = row.get("username") or ""
     external = row.get("external_name") or ""
+    role = row.get("extra_role") or ""
+    role_part = f" — <i>{role}</i>" if role else ""
 
     username_part = f" ({make_silent_username(username)})" if username else ""
     external_part = f" — {external}" if external else ""
 
     if index is not None:
-        return f"{index}. {full_name}{username_part}{external_part}"
-    return f"{full_name}{username_part}{external_part}"
+        return f"{index}. {full_name}{username_part}{external_part}{role_part}"
+
+    return f"{full_name}{username_part}{external_part}{role_part}"
 
 # ============ CHAT MEMBER EVENTS ============
 
@@ -538,6 +542,113 @@ async def admin_set_name(msg: types.Message):
         f"✨ Имя участника обновлено на <b>{new_name}</b>",
         parse_mode="HTML"
     )
+    
+# ========== USER ADD ==========
+
+@dp.message(Command("add"))
+async def cmd_add(msg: types.Message):
+    args = msg.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        await msg.answer("Напиши роль после команды. Пример:\n/add Руководитель")
+        return
+
+    role = args[1].strip()
+    if not role:
+        await msg.answer("❌ Роль не может быть пустой.")
+        return
+
+    await asyncio.to_thread(
+        upsert_user,
+        msg.chat.id,
+        msg.from_user,
+        extra_role=role
+    )
+
+    await msg.answer(f"✨ Роль установлена: <b>{role}</b>", parse_mode="HTML")
+
+# ========== ADMIN ADDROLE ==========
+
+@dp.message(Command("addrole"))
+async def admin_add_role(msg: types.Message):
+    if not await admin_check(msg):
+        return
+
+    # --- 1) REPLY ---
+    if msg.reply_to_message:
+        target = msg.reply_to_message.from_user
+        args = msg.text.split(maxsplit=1)
+        if len(args) < 2:
+            await msg.answer("Напишите роль. Пример:\n/addrole Руководитель")
+            return
+
+        role = args[1].strip()
+        supabase.table("members").upsert({
+            "chat_id": msg.chat.id,
+            "user_id": target.id,
+            "username": target.username or "",
+            "full_name": target.full_name or "",
+            "extra_role": role
+        }, on_conflict="chat_id,user_id").execute()
+
+        await msg.answer(
+            f"✨ Роль участника <b>{target.full_name}</b> обновлена на <b>{role}</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    # --- 2) Через текст ---
+    args = msg.text.split(maxsplit=2)
+    if len(args) < 3:
+        await msg.answer(
+            "Форматы:\n"
+            "/addrole @username Роль\n"
+            "/addrole user_id Роль\n"
+            "/addrole Имя Роль\n"
+            "ИЛИ ответом на сообщение:\n"
+            "/addrole Роль"
+        )
+        return
+
+    target, role = args[1].strip(), args[2].strip()
+    members = await asyncio.to_thread(get_members, msg.chat.id)
+
+    found_user = None
+
+    # @username
+    if target.startswith("@"):
+        uname = target[1:].lower()
+        found_user = next((m for m in members if (m.get("username") or "").lower() == uname), None)
+
+    # user_id
+    elif target.isdigit():
+        uid = int(target)
+        found_user = next((m for m in members if m.get("user_id") == uid), None)
+
+    # full name
+    else:
+        name_lower = target.lower()
+        candidates = [m for m in members if (m.get("full_name") or "").lower() == name_lower]
+        if len(candidates) == 1:
+            found_user = candidates[0]
+        elif len(candidates) > 1:
+            await msg.answer("⚠ Найдено несколько человек с таким именем — уточните.")
+            return
+
+    if not found_user:
+        await msg.answer("❌ Пользователь не найден.")
+        return
+
+    uid = found_user["user_id"]
+
+    supabase.table("members").update({"extra_role": role}).eq(
+        "chat_id", msg.chat.id
+    ).eq("user_id", uid).execute()
+
+    await msg.answer(
+        f"✨ Роль участника обновлена на <b>{role}</b>",
+        parse_mode="HTML"
+    )
 
 # ========== ADMIN EXPORT CSV ==========
 
@@ -604,19 +715,18 @@ async def cmd_find(msg: types.Message):
         full_name = (row.get("full_name") or "").lower()
         username = (row.get("username") or "").lower()
         external = (row.get("external_name") or "").lower()
+        role = (row.get("extra_role") or "").lower()
 
-        if query in full_name or query in username or query in external:
+        if query in full_name or query in username or query in external or query in role:
             results.append(row)
 
     if not results:
         await msg.answer("❌ Никто не найден.")
         return
 
-    lines = []
-    for i, row in enumerate(results, start=1):
-        lines.append(format_member_inline(row, i))
-
+    lines = [format_member_inline(r, i+1) for i, r in enumerate(results)]
     full_text = "\n".join(lines)
+
     await send_long_message(msg, "🔎 Результаты поиска", full_text)
 
 # ========== CLEANUP (удаление ушедших) ==========
