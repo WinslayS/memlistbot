@@ -61,16 +61,12 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 LAST_UPDATE: dict[int, float] = {}
 
 # Время обновления (рекомендуется 60 секунд)
-UPDATE_TTL = 60
+UPDATE_TTL = 10
 
 # ============ DB HELPERS ============
 
 def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=None):
-    if (
-        user.username == "GroupAnonymousBot"
-        or (user.is_bot and user.id == chat_id)
-        or user.full_name == "Group"
-    ):
+    if user.username == "GroupAnonymousBot" or (user.is_bot and user.id != chat_id):
         return
 
     payload = {
@@ -87,10 +83,12 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
         payload["extra_role"] = extra_role
 
     try:
-        return supabase.table("members").upsert(
-            payload,
-            on_conflict="chat_id, user_id"
-        ).execute()
+        return (
+            supabase.table("members")
+            .upsert(payload)
+            .on_conflict("chat_id,user_id")
+            .execute()
+        )
     except Exception as e:
         logger.error("Supabase upsert_user error: %s", e)
 
@@ -100,26 +98,25 @@ def get_members(chat_id: int):
             supabase.table("members")
             .select("*")
             .eq("chat_id", chat_id)
-            .order("created_at", desc=False)
+            .order("id")
             .execute()
         )
         return res.data or []
     except Exception as e:
-        logger.error("Supabase get_members error (chat %s): %s", chat_id, e)
+        logger.error("Supabase get_members error: %s", e)
         return []
 
 def delete_user(chat_id: int, user_id: int):
     try:
-        supabase.table("members") \
-            .delete() \
-            .eq("chat_id", chat_id) \
-            .eq("user_id", user_id) \
+        (
+            supabase.table("members")
+            .delete()
+            .eq("chat_id", chat_id)
+            .eq("user_id", user_id)
             .execute()
-        logger.info("Удалён пользователь %s из чата %s", user_id, chat_id)
-
+        )
     except Exception as e:
-        logger.error("Supabase delete_user error (chat %s user %s): %s",
-                     chat_id, user_id, e)
+        logger.error("delete_user error: %s", e)
 
 def clear_left_users(chat_id: int, left_user_ids: list[int]):
     for uid in left_user_ids:
@@ -813,20 +810,63 @@ async def cmd_cleanup(msg: types.Message):
 async def auto_register(msg: types.Message):
     user = msg.from_user
     uid = user.id
+    chat_id = msg.chat.id
     now = time.time()
 
-    # Если обновляли < 60 сек назад — пропускаем
+    # --- легкий TTL (анти-спам, 5 сек)
     last = LAST_UPDATE.get(uid, 0)
     if now - last < UPDATE_TTL:
         return
 
-    # Обновляем запись
+    LAST_UPDATE[uid] = now
+
+    # --- достаём текущие данные
     try:
-        await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
-        LAST_UPDATE[uid] = now  # фиксируем время последнего обновления
-        logger.info("Обновление пользователя %s в чате %s", uid, msg.chat.id)
+        res = (
+            supabase.table("members")
+            .select("username, full_name")
+            .eq("chat_id", chat_id)
+            .eq("user_id", uid)
+            .single()
+            .execute()
+        )
+        row = res.data
+    except:
+        row = None
+
+    new_username = user.username or ""
+    new_full_name = user.full_name or ""
+
+    # --- если записи НЕТ → добавляем
+    if not row:
+        await asyncio.to_thread(
+            upsert_user,
+            chat_id,
+            user
+        )
+        return
+
+    # --- если изменения отсутствуют → не трогаем Supabase
+    if (
+        row.get("username") == new_username and
+        row.get("full_name") == new_full_name
+    ):
+        return
+
+    # --- изменилось → обновляем только эти 2 поля
+    try:
+        (
+            supabase.table("members")
+            .update({
+                "username": new_username,
+                "full_name": new_full_name
+            })
+            .eq("chat_id", chat_id)
+            .eq("user_id", uid)
+            .execute()
+        )
     except Exception as e:
-        logger.error("Ошибка Supabase при авто-регистрации: %s", e)
+        logger.error("Auto-register update error: %s", e)
 
 # ============ RUN ============
 
