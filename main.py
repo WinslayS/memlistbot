@@ -495,8 +495,6 @@ async def admin_set_name(msg: types.Message):
 
     args = msg.text.split()
 
-args = msg.text.split()
-
     if len(args) < 3:
         await msg.answer(
             "Форматы:\n"
