@@ -493,7 +493,8 @@ async def admin_set_name(msg: types.Message):
     #     СПОСОБ №2 — @username / id / имя
     # ===============================
 
-    args = msg.text.split(maxsplit=2)
+    args = msg.text.split()
+
     if len(args) < 3:
         await msg.answer(
             "Форматы:\n"
@@ -505,7 +506,8 @@ async def admin_set_name(msg: types.Message):
         )
         return
 
-    target, new_name = args[1].strip(), args[2].strip()
+        target = args[1].strip()
+        new_name = " ".join(args[2:]).strip()
 
     members = await asyncio.to_thread(get_members, msg.chat.id)
 
