@@ -844,7 +844,7 @@ async def auto_register(msg: types.Message):
     try:
         res = (
             supabase.table("members")
-            .select("username, full_name")
+            .select("*")
             .eq("chat_id", chat_id)
             .eq("user_id", uid)
             .single()
