@@ -626,7 +626,7 @@ async def admin_add_role(msg: types.Message):
                     "full_name": target.full_name or "",
                     "extra_role": role,
                 },
-                on_conflict="chat_id, user_id"
+                ignore_duplicates=False
             ).execute()
         except Exception as e:
             logger.error("Supabase addrole(reply) error: %s", e)
