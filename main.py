@@ -535,44 +535,45 @@ async def admin_set_name(msg: types.Message):
         return
 
     # ---------- РЕЖИМ ЧЕРЕЗ REPLY ----------
-if msg.reply_to_message:
-    target_user = msg.reply_to_message.from_user
+    if msg.reply_to_message:
+        target_user = msg.reply_to_message.from_user
 
-    args = msg.text.split(maxsplit=1)
-    if len(args) < 2:
-        await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
-        return
+        args = msg.text.split(maxsplit=1)
+        if len(args) < 2:
+            await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
+            return
 
-    new_name = args[1].strip()
+        new_name = args[1].strip()
 
-    if new_name.startswith("@"):
-        parts = new_name.split(maxsplit=1)
-        if len(parts) == 2:
-            new_name = parts[1].strip()
+        if new_name.startswith("@"):
+            parts = new_name.split(maxsplit=1)
+            if len(parts) == 2:
+                new_name = parts[1].strip()
 
-    if not new_name:
-        await msg.answer("❌ Имя не может быть пустым.")
-        return
+        if not new_name:
+            await msg.answer("❌ Имя не может быть пустым.")
+            return
 
-    try:
-        (
-            supabase.table("members")
-            .update({"external_name": new_name})
-            .eq("chat_id", msg.chat.id)
-            .eq("user_id", target_user.id)
-            .execute()
+        # ---- ВОТ ТУТ update ----
+        try:
+            (
+                supabase.table("members")
+                .update({"external_name": new_name})
+                .eq("chat_id", msg.chat.id)
+                .eq("user_id", target_user.id)
+                .execute()
+            )
+        except Exception as e:
+            logger.error("Supabase setname(reply) UPDATE error: %s", e)
+            await msg.answer("⚠ Ошибка при сохранении.")
+            return
+
+        await msg.answer(
+            f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
+            parse_mode="HTML"
         )
-    except Exception as e:
-        logger.error("Supabase setname(reply) UPDATE error: %s", e)
-        await msg.answer("⚠ Ошибка при сохранении.")
         return
 
-    await msg.answer(
-        f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
-        parse_mode="HTML"
-    )
-    return
-    
     # ---------- РЕЖИМ ЧЕРЕЗ ТЕКСТ ----------
     args = msg.text.split(maxsplit=2)
     if len(args) < 3:
@@ -589,7 +590,6 @@ if msg.reply_to_message:
     target = args[1].strip()
     new_name = args[2].strip()
 
-    # --- чистим имя от случайного @username ---
     if new_name.startswith("@"):
         parts = new_name.split(maxsplit=1)
         if len(parts) == 2:
@@ -600,17 +600,17 @@ if msg.reply_to_message:
         return
 
     found_user = await find_user_by_target(msg.chat.id, target)
-
     if found_user == "MULTIPLE":
         await msg.answer("⚠ Найдено несколько участников — уточните запрос.")
         return
 
     if not found_user:
-        await msg.answer("❌ Участник не найден в базе. Используйте ответом на сообщение.")
+        await msg.answer("❌ Участник не найден.")
         return
 
     uid = found_user["user_id"]
 
+    # --- ВОТ ТУТ update ---
     try:
         (
             supabase.table("members")
