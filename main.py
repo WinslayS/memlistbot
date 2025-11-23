@@ -559,6 +559,11 @@ async def admin_set_name(msg: types.Message):
     target = args[1].strip()
     new_name = args[2].strip()
 
+    if new_name.startswith("@"):
+    parts = new_name.split(maxsplit=1)
+    if len(parts) == 2:
+        new_name = parts[1]
+        
     if not new_name:
         await msg.answer("❌ Имя не может быть пустым.")
         return
@@ -649,6 +654,11 @@ async def admin_add_role(msg: types.Message):
     target = args[1].strip()
     role = args[2].strip()
 
+    if new_name.startswith("@"):
+    parts = new_name.split(maxsplit=1)
+    if len(parts) == 2:
+        new_name = parts[1]
+        
     if not role:
         await msg.answer("❌ Роль не может быть пустой.")
         return
