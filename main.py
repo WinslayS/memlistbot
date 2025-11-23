@@ -85,8 +85,7 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
     try:
         return (
             supabase.table("members")
-            .upsert(payload)
-            .on_conflict("chat_id,user_id")
+            .upsert(payload, ignore_duplicates=False)
             .execute()
         )
     except Exception as e:
@@ -501,9 +500,7 @@ async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    # ===============================
-    #     СПОСОБ №1 — ЧЕРЕЗ REPLY
-    # ===============================
+    # ---------- РЕЖИМ ЧЕРЕЗ REPLY ----------
     if msg.reply_to_message:
         target_user = msg.reply_to_message.from_user
 
@@ -513,11 +510,18 @@ async def admin_set_name(msg: types.Message):
             return
 
         new_name = args[1].strip()
+
+        # --- чистим имя от случайного @username ---
+        if new_name.startswith("@"):
+            parts = new_name.split(maxsplit=1)
+            if len(parts) == 2:
+                new_name = parts[1].strip()
+
         if not new_name:
             await msg.answer("❌ Имя не может быть пустым.")
             return
 
-        # Добавляем или обновляем пользователя
+        # сохраняем
         try:
             supabase.table("members").upsert(
                 {
@@ -527,11 +531,11 @@ async def admin_set_name(msg: types.Message):
                     "full_name": target_user.full_name or "",
                     "external_name": new_name,
                 },
-                on_conflict="chat_id, user_id"
+                ignore_duplicates=False
             ).execute()
         except Exception as e:
             logger.error("Supabase setname(reply) error: %s", e)
-            await msg.answer("⚠ Произошла ошибка при сохранении имени.")
+            await msg.answer("⚠ Ошибка при сохранении.")
             return
 
         await msg.answer(
@@ -540,10 +544,7 @@ async def admin_set_name(msg: types.Message):
         )
         return
 
-    # ===============================
-    #     СПОСОБ №2 — @username / id / имя
-    # ===============================
-
+    # ---------- РЕЖИМ ЧЕРЕЗ ТЕКСТ ----------
     args = msg.text.split(maxsplit=2)
     if len(args) < 3:
         await msg.answer(
@@ -559,24 +560,24 @@ async def admin_set_name(msg: types.Message):
     target = args[1].strip()
     new_name = args[2].strip()
 
+    # --- чистим имя от случайного @username ---
     if new_name.startswith("@"):
-    parts = new_name.split(maxsplit=1)
-    if len(parts) == 2:
-        new_name = parts[1]
-        
+        parts = new_name.split(maxsplit=1)
+        if len(parts) == 2:
+            new_name = parts[1].strip()
+
     if not new_name:
         await msg.answer("❌ Имя не может быть пустым.")
         return
 
-    # ищем пользователя через общий хелпер
     found_user = await find_user_by_target(msg.chat.id, target)
 
     if found_user == "MULTIPLE":
-        await msg.answer("⚠ Найдено несколько участников с таким именем — уточните.")
+        await msg.answer("⚠ Найдено несколько участников — уточните запрос.")
         return
 
     if not found_user:
-        await msg.answer("❌ Пользователь не найден в базе. Используйте ответом на его сообщение.")
+        await msg.answer("❌ Участник не найден в базе. Используйте ответом на сообщение.")
         return
 
     uid = found_user["user_id"]
@@ -587,7 +588,7 @@ async def admin_set_name(msg: types.Message):
         ).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
     except Exception as e:
         logger.error("Supabase setname(update) error: %s", e)
-        await msg.answer("⚠ Произошла ошибка при обновлении имени.")
+        await msg.answer("⚠ Ошибка при обновлении.")
         return
 
     await msg.answer(
@@ -653,11 +654,6 @@ async def admin_add_role(msg: types.Message):
 
     target = args[1].strip()
     role = args[2].strip()
-
-    if new_name.startswith("@"):
-    parts = new_name.split(maxsplit=1)
-    if len(parts) == 2:
-        new_name = parts[1]
         
     if not role:
         await msg.answer("❌ Роль не может быть пустой.")
