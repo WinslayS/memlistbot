@@ -107,8 +107,10 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
         if row.get("full_name") != new_full_name:
             update_data["full_name"] = new_full_name
 
+        # НЕ трогаем external_name, если None
         if external_name is not None:
-            update_data["external_name"] = external_name
+            if external_name != (row.get("external_name") or ""):
+                update_data["external_name"] = external_name
 
         if extra_role is not None:
             update_data["extra_role"] = extra_role
@@ -480,17 +482,19 @@ async def chat_member_events(event: types.ChatMemberUpdated):
 
         return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
 
-    # 2) Обычный пользователь зашёл в чат
+    # 2) Пользователь зашёл
     if old in ("left", "kicked") and new in ("member", "administrator"):
-        # игнорируем анонимных / ботов
+
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
         await asyncio.to_thread(upsert_user, chat_id, user)
+
         logger.info(
             "Пользователь %s (%s) добавлен в список чата %s",
             user.id, user.username, chat_id
         )
+        return
 
     # 3) Пользователь ушёл или был кикнут
     if new in ("left", "kicked"):
