@@ -679,6 +679,13 @@ async def admin_add_role(msg: types.Message):
         if not role:
             await msg.answer("❌ Роль не может быть пустой.")
             return
+            
+        # удаляем случайно попавший @username из роли
+        if target.username:
+            role = role.replace(f"@{target.username}", "").strip()
+
+        # удаляем ВСЕ слова, начинающиеся на @ (универсально)
+        role = " ".join(word for word in role.split() if not word.startswith("@"))
 
         try:
             (
@@ -714,22 +721,33 @@ async def admin_add_role(msg: types.Message):
 
     target = args[1].strip()
     role = args[2].strip()
+
     if not role:
         await msg.answer("❌ Роль не может быть пустой.")
         return
 
+    # 1) сначала найдём пользователя
     found_user = await find_user_by_target(msg.chat.id, target)
 
     if found_user == "MULTIPLE":
-        await msg.answer("⚠ Найдено несколько человек с таким именем — уточните.")
+        await msg.answer("⚠ Найдено несколько человек — уточните.")
         return
 
     if not found_user:
         await msg.answer("❌ Пользователь не найден.")
         return
 
+    # 2) очищаем роль от @username
+    uname = found_user.get("username")
+    if uname:
+        role = role.replace(f"@{uname}", "").strip()
+
+    # 3) удаляем любые случайные @ слова
+    role = " ".join(word for word in role.split() if not word.startswith("@"))
+
     uid = found_user["user_id"]
 
+    # 4) обновляем роль
     try:
         (
             supabase.table("members")
@@ -740,14 +758,14 @@ async def admin_add_role(msg: types.Message):
         )
     except Exception as e:
         logger.error("Supabase addrole(update) error: %s", e)
-        await msg.answer("⚠ Произошла ошибка при обновлении роли.")
+        await msg.answer("⚠ Ошибка при обновлении роли.")
         return
 
     await msg.answer(
         f"✨ Роль участника обновлена на <b>{role}</b>",
         parse_mode="HTML"
     )
-    
+
 # ========== ADMIN EXPORT CSV ==========
 
 import csv
