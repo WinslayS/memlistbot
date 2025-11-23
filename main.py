@@ -311,45 +311,108 @@ def format_member_txt(row: dict, index: int | None = None) -> str:
 
 async def find_user_by_target(chat_id: int, target: str):
     """
-    target может быть:
+    Улучшенный поиск:
     - @username
     - user_id
-    - full_name
-    - external_name
+    - точное совпадение full_name / external_name
+    - частичный поиск (как /find)
     """
 
     rows = await asyncio.to_thread(get_members, chat_id)
-    target = target.strip()
+    target = target.strip().lower()
 
-    # 1) поиск по username (@name)
+    # 1) @username
     if target.startswith("@"):
-        uname = target[1:].lower()
-        return next(
-            (m for m in rows if (m.get("username") or "").lower() == uname),
-            None
-        )
+        uname = target[1:]
+        matches = [
+            m for m in rows
+            if (m.get("username") or "").lower() == uname
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            return "MULTIPLE"
+        return None
 
-    # 2) поиск по user_id
+    # 2) user_id
     if target.isdigit():
         uid = int(target)
         return next((m for m in rows if m.get("user_id") == uid), None)
 
-    # 3) поиск по full_name и external_name
-    lower = target.lower()
-    matches = [
+    # 3) Полное совпадение full_name/external_name
+    exact = [
         m for m in rows
-        if (m.get("full_name") or "").lower() == lower
-        or (m.get("external_name") or "").lower() == lower
+        if (m.get("full_name") or "").lower() == target
+        or (m.get("external_name") or "").lower() == target
+    ]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return "MULTIPLE"
+
+    # 4) Частичный поиск (как /find)
+    partial = [
+        m for m in rows
+        if target in (m.get("full_name") or "").lower()
+        or target in (m.get("external_name") or "").lower()
+        or target in (m.get("username") or "").lower()
     ]
 
-    if len(matches) == 1:
-        return matches[0]
-
-    if len(matches) > 1:
+    if len(partial) == 1:
+        return partial[0]
+    if len(partial) > 1:
         return "MULTIPLE"
 
     return None
-    
+
+# ============ MULTI TARGET ============
+
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+PENDING_ACTIONS = {}  # task_id -> data
+
+async def show_user_selection(msg: types.Message, matches: list, operation: str, value: str):
+    kb = InlineKeyboardBuilder()
+
+    text_lines = ["⚠ Найдено несколько участников:\n"]
+
+    for m in matches:
+        uid = m["user_id"]
+        full = m.get("full_name") or "Без имени"
+        ext = m.get("external_name") or ""
+        uname = m.get("username") or ""
+
+        display = full
+        if ext:
+            display += f" — {ext}"
+        if uname:
+            display += f" (@{uname})"
+
+        text_lines.append(f"• {display}")
+
+        # создаём уникальный task_id
+        task_id = f"{msg.chat.id}_{uid}_{operation}_{int(time.time())}"
+
+        # сохраняем данные
+        PENDING_ACTIONS[task_id] = {
+            "chat_id": msg.chat.id,
+            "user_id": uid,
+            "value": value,
+            "operation": operation
+        }
+
+        kb.button(
+            text=full[:20],  # текст на кнопке
+            callback_data=f"select_user:{task_id}"
+        )
+
+    kb.adjust(2)
+
+    await msg.answer(
+        "\n".join(text_lines) + "\n\nВыберите нужного:",
+        reply_markup=kb.as_markup()
+    )
+
 # ============ CHAT MEMBER EVENTS ============
 
 WELCOME_SENT = set()
@@ -646,8 +709,19 @@ async def admin_set_name(msg: types.Message):
 
     found_user = await find_user_by_target(msg.chat.id, target)
     if found_user == "MULTIPLE":
-        await msg.answer("⚠ Найдено несколько участников — уточните запрос.")
+        matches = await asyncio.to_thread(get_members, msg.chat.id)
+
+        target_lower = target.lower()
+        filtered = [
+            m for m in matches
+            if target_lower in (m.get("full_name") or "").lower()
+            or target_lower in (m.get("external_name") or "").lower()
+            or target_lower in (m.get("username") or "").lower()
+        ]
+
+        await show_user_selection(msg, filtered, "name", new_name)
         return
+
 
     if not found_user:
         await msg.answer("❌ Участник не найден.")
@@ -745,8 +819,19 @@ async def admin_add_role(msg: types.Message):
     found_user = await find_user_by_target(msg.chat.id, target)
 
     if found_user == "MULTIPLE":
-        await msg.answer("⚠ Найдено несколько человек — уточните.")
+        matches = await asyncio.to_thread(get_members, msg.chat.id)
+
+        target_lower = target.lower()
+        filtered = [
+            m for m in matches
+            if target_lower in (m.get("full_name") or "").lower()
+            or target_lower in (m.get("external_name") or "").lower()
+            or target_lower in (m.get("username") or "").lower()
+        ]
+
+        await show_user_selection(msg, filtered, "role", role)
         return
+
 
     if not found_user:
         await msg.answer("❌ Пользователь не найден.")
@@ -924,6 +1009,62 @@ async def cmd_cleanup(msg: types.Message):
         "Cleanup finished: removed=%s updated=%s chat=%s",
         len(left_users), updated_users, msg.chat.id
     )
+
+# ============ ОБРАБОТЧИК CALLBACK ============
+
+@dp.callback_query(lambda c: c.data.startswith("select_user:"))
+async def select_user_callback(callback: types.CallbackQuery):
+    task_id = callback.data.split(":", 1)[1]
+
+    # Данные есть?
+    if task_id not in PENDING_ACTIONS:
+        await callback.answer("Старый или неверный выбор", show_alert=True)
+        return
+
+    data = PENDING_ACTIONS.pop(task_id)  # удаляем после использования
+
+    chat_id = data["chat_id"]
+    user_id = data["user_id"]
+    value = data["value"]
+    operation = data["operation"]
+
+    # Проверка прав
+    admins = await get_admin_ids(chat_id)
+    if callback.from_user.id not in admins:
+        await callback.answer("Недостаточно прав", show_alert=True)
+        return
+
+    try:
+        if operation == "name":
+            supabase.table("members") \
+                .update({"external_name": value}) \
+                .eq("chat_id", chat_id) \
+                .eq("user_id", user_id) \
+                .execute()
+
+            await callback.message.edit_text(
+                f"✨ Имя участника обновлено на <b>{value}</b>",
+                parse_mode="HTML"
+            )
+
+        elif operation == "role":
+            supabase.table("members") \
+                .update({"extra_role": value}) \
+                .eq("chat_id", chat_id) \
+                .eq("user_id", user_id) \
+                .execute()
+
+            await callback.message.edit_text(
+                f"✨ Роль участника обновлена на <b>{value}</b>",
+                parse_mode="HTML"
+            )
+
+    except Exception as e:
+        logger.error(f"select_user_callback error: {e}")
+        await callback.answer("Ошибка сохранения", show_alert=True)
+        return
+
+    await callback.answer()
 
 # ========== AUTO-REGISTER ==========
 
