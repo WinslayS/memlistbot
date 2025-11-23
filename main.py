@@ -535,49 +535,44 @@ async def admin_set_name(msg: types.Message):
         return
 
     # ---------- РЕЖИМ ЧЕРЕЗ REPLY ----------
-    if msg.reply_to_message:
-        target_user = msg.reply_to_message.from_user
+if msg.reply_to_message:
+    target_user = msg.reply_to_message.from_user
 
-        args = msg.text.split(maxsplit=1)
-        if len(args) < 2:
-            await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
-            return
-
-        new_name = args[1].strip()
-
-        # --- чистим имя от случайного @username ---
-        if new_name.startswith("@"):
-            parts = new_name.split(maxsplit=1)
-            if len(parts) == 2:
-                new_name = parts[1].strip()
-
-        if not new_name:
-            await msg.answer("❌ Имя не может быть пустым.")
-            return
-
-        # сохраняем
-        try:
-            supabase.table("members").upsert(
-                {
-                    "chat_id": msg.chat.id,
-                    "user_id": target_user.id,
-                    "username": target_user.username or "",
-                    "full_name": target_user.full_name or "",
-                    "external_name": new_name,
-                },
-                ignore_duplicates=False
-            ).execute()
-        except Exception as e:
-            logger.error("Supabase setname(reply) error: %s", e)
-            await msg.answer("⚠ Ошибка при сохранении.")
-            return
-
-        await msg.answer(
-            f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
-            parse_mode="HTML"
-        )
+    args = msg.text.split(maxsplit=1)
+    if len(args) < 2:
+        await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
         return
 
+    new_name = args[1].strip()
+
+    if new_name.startswith("@"):
+        parts = new_name.split(maxsplit=1)
+        if len(parts) == 2:
+            new_name = parts[1].strip()
+
+    if not new_name:
+        await msg.answer("❌ Имя не может быть пустым.")
+        return
+
+    try:
+        (
+            supabase.table("members")
+            .update({"external_name": new_name})
+            .eq("chat_id", msg.chat.id)
+            .eq("user_id", target_user.id)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Supabase setname(reply) UPDATE error: %s", e)
+        await msg.answer("⚠ Ошибка при сохранении.")
+        return
+
+    await msg.answer(
+        f"✨ Имя участника <b>{target_user.full_name}</b> обновлено на <b>{new_name}</b>",
+        parse_mode="HTML"
+    )
+    return
+    
     # ---------- РЕЖИМ ЧЕРЕЗ ТЕКСТ ----------
     args = msg.text.split(maxsplit=2)
     if len(args) < 3:
@@ -617,9 +612,13 @@ async def admin_set_name(msg: types.Message):
     uid = found_user["user_id"]
 
     try:
-        supabase.table("members").update(
-            {"external_name": new_name}
-        ).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+        (
+            supabase.table("members")
+            .update({"external_name": new_name})
+            .eq("chat_id", msg.chat.id)
+            .eq("user_id", uid)
+            .execute()
+        )
     except Exception as e:
         logger.error("Supabase setname(update) error: %s", e)
         await msg.answer("⚠ Ошибка при обновлении.")
@@ -652,19 +651,16 @@ async def admin_add_role(msg: types.Message):
             return
 
         try:
-            supabase.table("members").upsert(
-                {
-                    "chat_id": msg.chat.id,
-                    "user_id": target.id,
-                    "username": target.username or "",
-                    "full_name": target.full_name or "",
-                    "extra_role": role,
-                },
-                ignore_duplicates=False
-            ).execute()
+            (
+                supabase.table("members")
+                .update({"extra_role": role})
+                .eq("chat_id", msg.chat.id)
+                .eq("user_id", uid)
+                .execute()
+            )
         except Exception as e:
-            logger.error("Supabase addrole(reply) error: %s", e)
-            await msg.answer("⚠ Произошла ошибка при сохранении роли.")
+            logger.error("Supabase addrole(update) error: %s", e)
+            await msg.answer("⚠ Произошла ошибка при обновлении роли.")
             return
 
         await msg.answer(
