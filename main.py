@@ -639,6 +639,32 @@ async def cmd_add(msg: types.Message):
 
     await msg.answer(f"✅ Роль установлена: <b>{role}</b>", parse_mode="HTML")
 
+# ========== REPLY ==========
+
+def is_real_reply(msg: types.Message) -> bool:
+    """
+    Проверяет, является ли ответ реальным ответом на сообщение участника,
+    а не на системное сообщение темы/форума.
+    """
+
+    # вообще нет reply → точно нет
+    if not msg.reply_to_message:
+        return False
+
+    # если это ответ на системное сообщение темы → НЕ считаем reply
+    if msg.reply_to_message.message_thread_id is not None:
+        return False
+
+    # если ответ самому себе → не reply
+    if msg.reply_to_message.from_user.id == msg.from_user.id:
+        return False
+
+    # если ответ боту → не reply
+    if msg.reply_to_message.from_user.is_bot:
+        return False
+
+    return True
+
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
 @dp.message(Command("setname"))
@@ -647,12 +673,8 @@ async def admin_set_name(msg: types.Message):
         return
 
     # ---------- РЕЖИМ REPLY (Только если реально ответ на человека) ----------
-    if (
-        msg.reply_to_message
-        and msg.reply_to_message.from_user
-        and not msg.reply_to_message.from_user.is_bot
-        and msg.reply_to_message.from_user.id != msg.from_user.id
-    ):
+    if is_real_reply(msg):
+
         target_user = msg.reply_to_message.from_user
 
         args = msg.text.split(maxsplit=1)
