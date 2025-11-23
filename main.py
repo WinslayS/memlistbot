@@ -527,6 +527,36 @@ async def cmd_name(msg: types.Message):
         parse_mode="HTML"
     )
 
+# ========== ADD ==========
+
+@dp.message(Command("add"))
+async def cmd_add(msg: types.Message):
+    args = msg.text.split(maxsplit=1)
+
+    if len(args) < 2:
+        await msg.answer("Напишите роль. Пример:\n/add Работник")
+        return
+
+    role = args[1].strip()
+    if not role:
+        await msg.answer("❌ Роль не может быть пустой.")
+        return
+
+    try:
+        (
+            supabase.table("members")
+            .update({"extra_role": role})
+            .eq("chat_id", msg.chat.id)
+            .eq("user_id", msg.from_user.id)
+            .execute()
+        )
+    except Exception as e:
+        logger.error("Supabase add (self) error: %s", e)
+        await msg.answer("⚠ Ошибка при сохранении.")
+        return
+
+    await msg.answer(f"✅ Роль установлена: <b>{role}</b>", parse_mode="HTML")
+
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
 
 @dp.message(Command("setname"))
@@ -636,7 +666,7 @@ async def admin_add_role(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    # --- 1) REPLY-РЕЖИМ ---
+    # --- 1) РЕЖИМ ЧЕРЕЗ REPLY ---
     if msg.reply_to_message:
         target = msg.reply_to_message.from_user
         args = msg.text.split(maxsplit=1)
@@ -655,12 +685,12 @@ async def admin_add_role(msg: types.Message):
                 supabase.table("members")
                 .update({"extra_role": role})
                 .eq("chat_id", msg.chat.id)
-                .eq("user_id", uid)
+                .eq("user_id", target.id)
                 .execute()
             )
         except Exception as e:
-            logger.error("Supabase addrole(update) error: %s", e)
-            await msg.answer("⚠ Произошла ошибка при обновлении роли.")
+            logger.error("Supabase addrole(reply) update error: %s", e)
+            await msg.answer("⚠ Произошла ошибка при сохранении роли.")
             return
 
         await msg.answer(
@@ -684,12 +714,10 @@ async def admin_add_role(msg: types.Message):
 
     target = args[1].strip()
     role = args[2].strip()
-        
     if not role:
         await msg.answer("❌ Роль не может быть пустой.")
         return
 
-    # ищем пользователя через общий хелпер
     found_user = await find_user_by_target(msg.chat.id, target)
 
     if found_user == "MULTIPLE":
@@ -703,9 +731,13 @@ async def admin_add_role(msg: types.Message):
     uid = found_user["user_id"]
 
     try:
-        supabase.table("members").update(
-            {"extra_role": role}
-        ).eq("chat_id", msg.chat.id).eq("user_id", uid).execute()
+        (
+            supabase.table("members")
+            .update({"extra_role": role})
+            .eq("chat_id", msg.chat.id)
+            .eq("user_id", uid)
+            .execute()
+        )
     except Exception as e:
         logger.error("Supabase addrole(update) error: %s", e)
         await msg.answer("⚠ Произошла ошибка при обновлении роли.")
@@ -715,7 +747,7 @@ async def admin_add_role(msg: types.Message):
         f"✨ Роль участника обновлена на <b>{role}</b>",
         parse_mode="HTML"
     )
-
+    
 # ========== ADMIN EXPORT CSV ==========
 
 import csv
