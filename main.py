@@ -69,27 +69,61 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
     if user.username == "GroupAnonymousBot" or (user.is_bot and user.id != chat_id):
         return
 
-    payload = {
-        "chat_id": chat_id,
-        "user_id": user.id,
-        "username": user.username or "",
-        "full_name": user.full_name or "",
-    }
-
-    if external_name is not None:
-        payload["external_name"] = external_name
-
-    if extra_role is not None:
-        payload["extra_role"] = extra_role
-
     try:
-        return (
+        # === 1. Пытаемся получить запись ===
+        res = (
             supabase.table("members")
-            .upsert(payload, ignore_duplicates=False)
+            .select("*")
+            .eq("chat_id", chat_id)
+            .eq("user_id", user.id)
+            .maybe_single()
             .execute()
         )
+
+        row = res.data
+
+        # === 2. Если НЕТ записи — создаём ===
+        if not row:
+            payload = {
+                "chat_id": chat_id,
+                "user_id": user.id,
+                "username": user.username or "",
+                "full_name": user.full_name or "",
+                "external_name": external_name or "",
+                "extra_role": extra_role or "",
+            }
+
+            supabase.table("members").insert(payload).execute()
+            return
+
+        # === 3. Если запись есть — обновляем только изменившиеся поля ===
+        update_data = {}
+        new_username = user.username or ""
+        new_full_name = user.full_name or ""
+
+        if row.get("username") != new_username:
+            update_data["username"] = new_username
+
+        if row.get("full_name") != new_full_name:
+            update_data["full_name"] = new_full_name
+
+        if external_name is not None:
+            update_data["external_name"] = external_name
+
+        if extra_role is not None:
+            update_data["extra_role"] = extra_role
+
+        if update_data:
+            (
+                supabase.table("members")
+                .update(update_data)
+                .eq("chat_id", chat_id)
+                .eq("user_id", user.id)
+                .execute()
+            )
+
     except Exception as e:
-        logger.error("Supabase upsert_user error: %s", e)
+        logger.error("Supabase upsert_user FIXED error: %s", e)
 
 def get_members(chat_id: int):
     try:
