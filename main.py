@@ -272,6 +272,25 @@ def make_silent_username(username: str) -> str:
     # @ + zero-width-space + username
     return f"@{ZERO_WIDTH_SPACE}{username}"
 
+def format_member_inline(row: dict, index: int | None = None) -> str:
+    """
+    Формат одной строки для Telegram (HTML):
+    1. Андрей (@andre) — проверка — <i>глава смены</i>
+    """
+    full_name = row.get("full_name") or "Без имени"
+    username = row.get("username") or ""
+    external = row.get("external_name") or ""
+    role = row.get("extra_role") or ""
+    role_part = f" — <i>{role}</i>" if role else ""
+
+    username_part = f" ({make_silent_username(username)})" if username else ""
+    external_part = f" — {external}" if external else ""
+
+    if index is not None:
+        return f"{index}. {full_name}{username_part}{external_part}{role_part}"
+
+    return f"{full_name}{username_part}{external_part}{role_part}"
+
 def format_member_txt(row: dict, index: int | None = None) -> str:
     """Формат строки для TXT экспорта (БЕЗ HTML-тегов)."""
     full_name = row.get("full_name") or "Без имени"
