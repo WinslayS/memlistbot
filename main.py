@@ -272,20 +272,16 @@ def make_silent_username(username: str) -> str:
     # @ + zero-width-space + username
     return f"@{ZERO_WIDTH_SPACE}{username}"
 
-
-def format_member_inline(row: dict, index: int | None = None) -> str:
-    """
-    Формат одной строки:
-    1. Андрей (@andre) — проверка — глава смены
-    """
+def format_member_txt(row: dict, index: int | None = None) -> str:
+    """Формат строки для TXT экспорта (БЕЗ HTML-тегов)."""
     full_name = row.get("full_name") or "Без имени"
     username = row.get("username") or ""
     external = row.get("external_name") or ""
     role = row.get("extra_role") or ""
-    role_part = f" — <i>{role}</i>" if role else ""
 
-    username_part = f" ({make_silent_username(username)})" if username else ""
+    username_part = f" (@{username})" if username else ""
     external_part = f" — {external}" if external else ""
+    role_part = f" — {role}" if role else ""
 
     if index is not None:
         return f"{index}. {full_name}{username_part}{external_part}{role_part}"
@@ -801,7 +797,7 @@ async def cmd_export(msg: types.Message):
     output.write("📋 Список участников:\n\n")
 
     for i, row in enumerate(rows, start=1):
-        line = format_member_inline(row, i)
+        line = format_member_txt(row, i)
         output.write(line + "\n")
 
     csv_bytes = output.getvalue().encode("utf-8")
