@@ -482,27 +482,60 @@ async def chat_member_events(event: types.ChatMemberUpdated):
 
         return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
 
-    # 2) Пользователь зашёл
-    if old in ("left", "kicked") and new in ("member", "administrator"):
-
+    # 2) Пользователь зашёл / стал участником
+    if new in ("member", "administrator", "creator"):
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
         await asyncio.to_thread(upsert_user, chat_id, user)
 
         logger.info(
-            "Пользователь %s (%s) добавлен в список чата %s",
+            "Пользователь %s (%s) добавлен/обновлён в списке чата %s",
             user.id, user.username, chat_id
         )
+        # === отправляем приветственное уведомление ===
+        await send_welcome(event, user)
+
         return
 
-    # 3) Пользователь ушёл или был кикнут
-    if new in ("left", "kicked"):
+    # 3) Пользователь ушёл / кикнут / потерял доступ
+    if new in ("left", "kicked", "restricted"):
         await asyncio.to_thread(delete_user, chat_id, user.id)
         logger.info(
             "Пользователь %s удалён из списка чата %s",
             user.id, chat_id
         )
+        return
+
+# ============ WELCOME MESSAGE HELPER ============
+
+async def send_welcome(event: types.ChatMemberUpdated, user: types.User):
+    """
+    Автоматическое приветствие:
+    - в обычных чатах → в основной чат
+    - в чатах с темами → в ту же тему, где Телеграм написал системное сообщение
+    """
+
+    chat_id = event.chat.id
+    thread_id = getattr(event, "message_thread_id", None)
+
+    text = (
+        f"👋 Привет, <b>{user.full_name}</b>!\n\n"
+        "Чтобы появиться в списке, используй:\n"
+        "• <code>/name ТвоёИмя</code>\n"
+        "• <code>/add Роль</code> (необязательно)\n\n"
+        "Если что-то непонятно — /help 🙂"
+    )
+
+    try:
+        await bot.send_message(
+            chat_id,
+            text,
+            parse_mode="HTML",
+            message_thread_id=thread_id  # если None — пойдёт в основной чат
+        )
+    except Exception as e:
+        logger.error("WELCOME ERROR: %s", e)
 
 # ============ COMMANDS ============
 
