@@ -483,7 +483,7 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
 
     # 2) Пользователь зашёл / стал участником
-    if new in ("member", "administrator", "creator"):
+    if old in ("left", "kicked", "restricted") and new in ("member", "administrator", "creator"):
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
