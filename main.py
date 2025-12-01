@@ -481,25 +481,26 @@ async def chat_member_events(event: types.ChatMemberUpdated):
             )
 
         return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
+        
+    INSIDE_STATUSES = {"member", "administrator", "creator", "restricted"}
 
-    # 2) Пользователь зашёл / стал участником
-    if old in ("left", "kicked", "restricted") and new in ("member", "administrator", "creator"):
+    # === Реальный вход нового участника ===
+    if old in ("left", "kicked") and new in INSIDE_STATUSES:
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
         await asyncio.to_thread(upsert_user, chat_id, user)
 
         logger.info(
-            "Пользователь %s (%s) добавлен/обновлён в списке чата %s",
+            "Пользователь %s (%s) добавлен в список чата %s (JOIN FIX)",
             user.id, user.username, chat_id
         )
-        # === отправляем приветственное уведомление ===
-        await send_welcome(event, user)
 
+        await send_welcome(event, user)
         return
 
     # 3) Пользователь ушёл / кикнут / потерял доступ
-    if new in ("left", "kicked", "restricted"):
+    if new in ("left", "kicked"):
         await asyncio.to_thread(delete_user, chat_id, user.id)
         logger.info(
             "Пользователь %s удалён из списка чата %s",
@@ -1117,9 +1118,23 @@ async def auto_register(msg: types.Message):
     now = time.time()
 
     # --- легкий TTL (анти-спам, 5 сек)
-    last = LAST_UPDATE.get(uid, 0)
-    if now - last < UPDATE_TTL:
-        return
+    try:
+        res = (
+            supabase.table("members")
+            .select("user_id")
+            .eq("chat_id", chat_id)
+            .eq("user_id", uid)
+            .maybe_single()
+            .execute()
+        )
+        exists = bool(res.data)
+    except:
+        exists = False
+
+    if exists:
+        last = LAST_UPDATE.get(uid, 0)
+        if now - last < UPDATE_TTL:
+            return
 
     LAST_UPDATE[uid] = now
 
@@ -1130,11 +1145,12 @@ async def auto_register(msg: types.Message):
             .select("*")
             .eq("chat_id", chat_id)
             .eq("user_id", uid)
-            .single()
+            .maybe_single()
             .execute()
         )
         row = res.data
-    except:
+    except Exception as e:
+        logger.error("Auto-register select error: %s", e)
         row = None
 
     new_username = user.username or ""
