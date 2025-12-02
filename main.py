@@ -70,17 +70,22 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
         return
 
     try:
-        # === 1. Пытаемся получить запись ===
         res = (
             supabase.table("members")
             .select("*")
             .eq("chat_id", chat_id)
             .eq("user_id", user.id)
-            .maybe_single()
             .execute()
         )
 
-        row = res.data
+        if res and isinstance(res.data, list) and len(res.data) > 0:
+            row = res.data[0]
+        else:
+            row = None
+
+    except Exception as e:
+        logger.error("Supabase SELECT error: %s", e)
+        row = None
 
         # === 2. Если НЕТ записи — создаём ===
         if not row:
@@ -1138,20 +1143,24 @@ async def auto_register(msg: types.Message):
 
     LAST_UPDATE[uid] = now
 
-    # --- достаём текущие данные
     try:
         res = (
             supabase.table("members")
             .select("*")
             .eq("chat_id", chat_id)
             .eq("user_id", uid)
-            .maybe_single()
             .execute()
         )
-        row = res.data
+
+        if res and isinstance(res.data, list) and len(res.data) > 0:
+            row = res.data[0]
+        else:
+            row = None
+
     except Exception as e:
         logger.error("Auto-register select error: %s", e)
         row = None
+
 
     new_username = user.username or ""
     new_full_name = user.full_name or ""
