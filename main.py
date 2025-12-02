@@ -64,11 +64,11 @@ LAST_UPDATE: dict[int, float] = {}
 UPDATE_TTL = 10
 
 # ============ DB HELPERS ============
-
 def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=None):
     if user.username == "GroupAnonymousBot" or (user.is_bot and user.id != chat_id):
         return
 
+    # === 1. SELECT ===
     try:
         res = (
             supabase.table("members")
@@ -87,7 +87,7 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
         logger.error("Supabase SELECT error: %s", e)
         row = None
 
-        # === 2. Если НЕТ записи — создаём ===
+    # === 2. Если НЕТ записи — создаём ===
     if not row:
         payload = {
             "chat_id": chat_id,
@@ -98,7 +98,11 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
             "extra_role": extra_role or "",
         }
 
-        supabase.table("members").insert(payload).execute()
+        try:
+            supabase.table("members").insert(payload).execute()
+        except Exception as e:
+            logger.error("Supabase INSERT error: %s", e)
+
         return
 
     # === 3. Если запись есть — обновляем только изменившиеся поля ===
@@ -120,7 +124,11 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
     if extra_role is not None:
         update_data["extra_role"] = extra_role
 
-    if update_data:
+    # --- UPDATE с обработкой ошибок ---
+    if not update_data:
+        return
+
+    try:
         (
             supabase.table("members")
             .update(update_data)
@@ -128,7 +136,6 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
             .eq("user_id", user.id)
             .execute()
         )
-
     except Exception as e:
         logger.error("Supabase upsert_user FIXED error: %s", e)
 
