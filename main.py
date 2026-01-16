@@ -8,22 +8,15 @@ from supabase import create_client, Client
 # ============ LOGGING ============
 
 import logging
-import time
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
-
-logger = logging.getLogger(__name__)
+import sys
 
 class ColorFormatter(logging.Formatter):
     COLORS = {
-        logging.DEBUG: "\033[37m",      # серый
-        logging.INFO: "\033[36m",       # голубой
-        logging.WARNING: "\033[33m",    # жёлтый
-        logging.ERROR: "\033[31m",      # красный
-        logging.CRITICAL: "\033[91m",   # ярко-красный
+        logging.DEBUG: "\033[37m",
+        logging.INFO: "\033[36m",
+        logging.WARNING: "\033[33m",
+        logging.ERROR: "\033[31m",
+        logging.CRITICAL: "\033[91m",
     }
     RESET = "\033[0m"
 
@@ -32,11 +25,14 @@ class ColorFormatter(logging.Formatter):
         message = super().format(record)
         return f"{color}{message}{self.RESET}"
 
-handler = logging.StreamHandler()
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
 handler.setFormatter(ColorFormatter("[%(levelname)s] %(message)s"))
 
-logging.basicConfig(level=logging.INFO, handlers=[handler])
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+logger.handlers.clear()   # 🔥 ВАЖНО
+logger.addHandler(handler)
 
 # ============ ENV ============
 
@@ -429,7 +425,8 @@ async def show_user_selection(msg: types.Message, matches: list, operation: str,
 
 # ============ CHAT MEMBER EVENTS ============
 
-WELCOME_SENT = set()
+WELCOME_SENT: dict[int, float] = {}
+WELCOME_TTL = 3600
 
 @dp.chat_member()
 async def chat_member_events(event: types.ChatMemberUpdated):
@@ -454,9 +451,11 @@ async def chat_member_events(event: types.ChatMemberUpdated):
             parse_mode="HTML"
         )
 
-        # Сообщение №2 — HELP, только 1 раз для этого чата
-        if chat_id not in WELCOME_SENT:
-            WELCOME_SENT.add(chat_id)
+        now = time.time()
+        last = WELCOME_SENT.get(chat_id, 0)
+
+        if now - last > WELCOME_TTL:
+            WELCOME_SENT[chat_id] = now
 
             await bot.send_message(
                 chat_id,
@@ -495,9 +494,14 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
         
     INSIDE_STATUSES = {"member", "administrator", "creator", "restricted"}
+    OUTSIDE_STATUSES = {"left", "kicked"}
 
     # === Реальный вход нового участника ===
-    if old in ("left", "kicked") and new in INSIDE_STATUSES:
+    if (
+        old in OUTSIDE_STATUSES and new in INSIDE_STATUSES
+    ) or (
+        old == "member" and new == "member" and event.invite_link is not None
+    ):
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
@@ -523,14 +527,7 @@ async def chat_member_events(event: types.ChatMemberUpdated):
 # ============ WELCOME MESSAGE HELPER ============
 
 async def send_welcome(event: types.ChatMemberUpdated, user: types.User):
-    """
-    Автоматическое приветствие:
-    - в обычных чатах → в основной чат
-    - в чатах с темами → в ту же тему, где Телеграм написал системное сообщение
-    """
-
     chat_id = event.chat.id
-    thread_id = getattr(event, "message_thread_id", None)
 
     text = (
         f"👋 Привет, <b>{user.full_name}</b>!\n\n"
@@ -541,12 +538,7 @@ async def send_welcome(event: types.ChatMemberUpdated, user: types.User):
     )
 
     try:
-        await bot.send_message(
-            chat_id,
-            text,
-            parse_mode="HTML",
-            message_thread_id=thread_id  # если None — пойдёт в основной чат
-        )
+        await bot.send_message(chat_id, text, parse_mode="HTML")
     except Exception as e:
         logger.error("WELCOME ERROR: %s", e)
 
@@ -688,17 +680,13 @@ async def cmd_add(msg: types.Message):
 # ========== REPLY ==========
 
 def is_real_reply(msg: types.Message) -> bool:
-    """
-    Проверяет, является ли ответ реальным ответом на сообщение участника,
-    а не на системное сообщение темы/форума.
-    """
 
     # вообще нет reply → точно нет
     if not msg.reply_to_message:
         return False
 
     # если это ответ на системное сообщение темы → НЕ считаем reply
-    if msg.reply_to_message.message_thread_id is not None:
+    if msg.reply_to_message.from_user is None:
         return False
 
     # если ответ самому себе → не reply
@@ -732,6 +720,8 @@ async def admin_set_name(msg: types.Message):
         if not new_name:
             await msg.answer("❌ Имя не может быть пустым.")
             return
+
+        await asyncio.to_thread(upsert_user, msg.chat.id, target_user)
 
         supabase.table("members") \
             .update({"external_name": new_name}) \
@@ -1041,6 +1031,7 @@ async def cmd_cleanup(msg: types.Message):
         if changed:
             updated_users += 1
             try:
+                await asyncio.to_thread(upsert_user, msg.chat.id, tg_user)
                 supabase.table("members").update({
                     "username": new_username,
                     "full_name": new_fullname
@@ -1122,7 +1113,7 @@ async def select_user_callback(callback: types.CallbackQuery):
 
 # ========== AUTO-REGISTER ==========
 
-@dp.message()
+@dp.message(lambda m: not m.text.startswith("/"))
 async def auto_register(msg: types.Message):
     user = msg.from_user
     uid = user.id
