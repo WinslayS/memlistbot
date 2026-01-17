@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from supabase import create_client, Client
+import time
 
 # ============ LOGGING ============
 
@@ -677,43 +678,29 @@ async def cmd_add(msg: types.Message):
 
     await msg.answer(f"✅ Роль установлена: <b>{role}</b>", parse_mode="HTML")
 
-# ========== REPLY ==========
-
-def is_real_reply(msg: types.Message) -> bool:
-
-    # вообще нет reply → точно нет
-    if not msg.reply_to_message:
-        return False
-
-    # если это ответ на системное сообщение темы → НЕ считаем reply
-    if msg.reply_to_message.from_user is None:
-        return False
-
-    # если ответ самому себе → не reply
-    if msg.reply_to_message.from_user.id == msg.from_user.id:
-        return False
-
-    # если ответ боту → не reply
-    if msg.reply_to_message.from_user.is_bot:
-        return False
-
-    return True
-
 # ========== ADMIN: SET NAME FOR ANOTHER USER ==========
-
 @dp.message(Command("setname"))
 async def admin_set_name(msg: types.Message):
     if not await admin_check(msg):
         return
 
-    # ---------- РЕЖИМ REPLY (Только если реально ответ на человека) ----------
-    if is_real_reply(msg):
-
+    # ================= REPLY MODE =================
+    if msg.reply_to_message and msg.reply_to_message.from_user:
         target_user = msg.reply_to_message.from_user
+
+        logger.info(
+            "SETNAME: reply mode | admin=%s target=%s",
+            msg.from_user.id,
+            target_user.id
+        )
 
         args = msg.text.split(maxsplit=1)
         if len(args) < 2:
-            await msg.answer("Напишите новое имя. Пример:\n/setname Иван")
+            await msg.answer(
+                "❌ Напишите имя.\n"
+                "Пример:\n"
+                "/setname Иван"
+            )
             return
 
         new_name = args[1].strip()
@@ -735,14 +722,10 @@ async def admin_set_name(msg: types.Message):
         )
         return
 
-    # ---------- РЕЖИМ ЧЕРЕЗ ТЕКСТ ----------
+    # ================= TEXT MODE =================
     args = msg.text.split(maxsplit=2)
 
-    # Нужно строго 3 аргумента:
-    # 0: /setname
-    # 1: @username / id / имя
-    # 2: новое имя
-    if len(args) != 3:
+    if len(args) < 3:
         await msg.answer(
             "❌ Неверный формат.\n\n"
             "Правильно:\n"
@@ -757,6 +740,13 @@ async def admin_set_name(msg: types.Message):
     target = args[1].strip()
     new_name = args[2].strip()
 
+    logger.info(
+        "SETNAME: text mode | admin=%s target_raw='%s' new_name='%s'",
+        msg.from_user.id,
+        target,
+        new_name
+    )
+
     if not new_name:
         await msg.answer("❌ Имя не может быть пустым.")
         return
@@ -766,17 +756,17 @@ async def admin_set_name(msg: types.Message):
     if found_user == "MULTIPLE":
         rows = await asyncio.to_thread(get_members, msg.chat.id)
         target_lower = target.lower()
-        filtered = [
+        matches = [
             m for m in rows
             if target_lower in (m.get("full_name") or "").lower()
             or target_lower in (m.get("external_name") or "").lower()
             or target_lower in (m.get("username") or "").lower()
         ]
-        await show_user_selection(msg, filtered, "name", new_name)
+        await show_user_selection(msg, matches, "name", new_name)
         return
 
     if not found_user:
-        await msg.answer("❌ Участник не найден.")
+        await msg.answer("❌ Участник не найден в базе.")
         return
 
     uid = found_user["user_id"]
@@ -793,15 +783,21 @@ async def admin_set_name(msg: types.Message):
     )
 
 # ========== ADMIN ADDROLE ==========
-
 @dp.message(Command("addrole"))
 async def admin_add_role(msg: types.Message):
     if not await admin_check(msg):
         return
 
     # --- 1) РЕЖИМ ЧЕРЕЗ REPLY ---
-    if msg.reply_to_message:
+    if msg.reply_to_message and msg.reply_to_message.from_user:
         target = msg.reply_to_message.from_user
+
+        logger.info(
+            "ADDROLE: reply mode | admin=%s target=%s",
+            msg.from_user.id,
+            target.id
+        )
+
         args = msg.text.split(maxsplit=1)
 
         if len(args) < 2:
@@ -854,6 +850,13 @@ async def admin_add_role(msg: types.Message):
 
     target = args[1].strip()
     role = args[2].strip()
+
+    logger.info(
+        "ADDROLE: text mode | admin=%s target_raw='%s' role='%s'",
+        msg.from_user.id,
+        target,
+        role
+    )
 
     if not role:
         await msg.answer("❌ Роль не может быть пустой.")
@@ -1113,7 +1116,7 @@ async def select_user_callback(callback: types.CallbackQuery):
 
 # ========== AUTO-REGISTER ==========
 
-@dp.message(lambda m: not m.text.startswith("/"))
+@dp.message(lambda m: m.text and not m.text.startswith("/"))
 async def auto_register(msg: types.Message):
     user = msg.from_user
     uid = user.id
