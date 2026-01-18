@@ -1,4 +1,3 @@
-# ============ LOGGING ============
 import logging
 import sys
 
@@ -18,10 +17,16 @@ class ColorFormatter(logging.Formatter):
         return f"{color}{message}{self.RESET}"
 
 handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
+handler.setLevel(logging.INFO)
 handler.setFormatter(ColorFormatter("[%(levelname)s] %(message)s"))
 
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-logger.handlers.clear()   # 🔥 ВАЖНО
+logger.setLevel(logging.INFO)
+logger.handlers.clear()
 logger.addHandler(handler)
+
+# 🔕 Убираем шум от библиотек
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("supabase").setLevel(logging.WARNING)
+logging.getLogger("aiogram").setLevel(logging.INFO)
