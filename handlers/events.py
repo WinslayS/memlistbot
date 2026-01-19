@@ -2,40 +2,48 @@ import asyncio
 import time
 
 from aiogram import types
+from aiogram.enums import ChatMemberStatus
 
 from core import bot, dp
 from logger import logger
 from db import upsert_user, delete_user
 from helpers import WELCOME_SENT, WELCOME_TTL
 
-# ============ CHAT MEMBER EVENTS ============
+@dp.my_chat_member()
+async def on_bot_chat_member(event: types.ChatMemberUpdated):
+    chat_id = event.chat.id
+    user = event.new_chat_member.user
 
-WELCOME_SENT: dict[int, float] = {}
-WELCOME_TTL = 3600
+    # защита: это событие должно быть ТОЛЬКО про бота
+    if user.id != bot.id:
+        return
 
-@dp.chat_member()
-async def chat_member_events(event: types.ChatMemberUpdated):
     old = event.old_chat_member.status
     new = event.new_chat_member.status
-    user = event.new_chat_member.user
-    chat_id = event.chat.id
 
-    # 1) Бота добавили в чат
-    if user.id == bot.id and new in ("member", "administrator"):
+    # === Бота добавили в чат ===
+    if new in (
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR
+    ) and old in (
+        ChatMemberStatus.LEFT,
+        ChatMemberStatus.KICKED
+    ):
 
-        # Сообщение №1 — стандартное, как раньше
+        # --- Сообщение №1 (инструкции) ---
         await bot.send_message(
             chat_id,
             "🤖 <b>Бот подключён!</b>\n\n"
             "Чтобы всё работало корректно:\n"
             "• дайте мне право <b>«Добавление администраторов»</b>\n"
             "• отключите <b>анонимность администраторов</b>\n"
-            "• команды пишите <b>без пробела после слэша</b> — <code>/setname</code>, <code>/export</code>\n"
-            "• имейте ввиду, что в бот поступают данные с момента добавления его в группу\n\n"
+            "• команды пишите <b>без пробела после слэша</b>\n"
+            "• данные собираются с момента добавления бота\n\n"
             "После этого все функции будут работать корректно.",
             parse_mode="HTML"
         )
 
+        # --- антиспам приветствия ---
         now = time.time()
         last = WELCOME_SENT.get(chat_id, 0)
 
@@ -76,40 +84,57 @@ async def chat_member_events(event: types.ChatMemberUpdated):
                 parse_mode="HTML"
             )
 
-        return  # ⚠️ Оставляем! Чтобы старая логика не ломалась
-        
-    INSIDE_STATUSES = {"member", "administrator", "creator", "restricted"}
-    OUTSIDE_STATUSES = {"left", "kicked"}
+        return
+
+@dp.chat_member()
+async def chat_member_events(event: types.ChatMemberUpdated):
+    old = event.old_chat_member.status
+    new = event.new_chat_member.status
+    user = event.new_chat_member.user
+    chat_id = event.chat.id
+
+    INSIDE_STATUSES = {
+        ChatMemberStatus.MEMBER,
+        ChatMemberStatus.ADMINISTRATOR,
+        ChatMemberStatus.CREATOR,
+        ChatMemberStatus.RESTRICTED,
+    }
+    OUTSIDE_STATUSES = {
+        ChatMemberStatus.LEFT,
+        ChatMemberStatus.KICKED,
+    }
 
     # === Реальный вход нового участника ===
     if (
         old in OUTSIDE_STATUSES and new in INSIDE_STATUSES
     ) or (
-        old == "member" and new == "member" and event.invite_link is not None
+        old == ChatMemberStatus.MEMBER
+        and new == ChatMemberStatus.MEMBER
+        and event.invite_link is not None
     ):
+        # игнор анонимных / ботов
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
         await asyncio.to_thread(upsert_user, chat_id, user)
 
         logger.info(
-            "Пользователь %s (%s) добавлен в список чата %s (JOIN FIX)",
+            "Пользователь %s (%s) добавлен в список чата %s",
             user.id, user.username, chat_id
         )
 
         await send_welcome(event, user)
         return
 
-    # 3) Пользователь ушёл / кикнут / потерял доступ
-    if new in ("left", "kicked"):
+    # === Пользователь ушёл / кикнут ===
+    if new in OUTSIDE_STATUSES:
         await asyncio.to_thread(delete_user, chat_id, user.id)
+
         logger.info(
             "Пользователь %s удалён из списка чата %s",
             user.id, chat_id
         )
         return
-
-# ============ WELCOME MESSAGE HELPER ============
 
 async def send_welcome(event: types.ChatMemberUpdated, user: types.User):
     chat_id = event.chat.id
