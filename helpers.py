@@ -264,3 +264,15 @@ def get_target_user_from_reply(msg: types.Message):
         return None
 
     return None
+
+async def delete_command_later(msg: types.Message, delay: int = 5):
+    """
+    Пытается удалить сообщение с командой через delay секунд.
+    Ошибки (нет прав и т.п.) подавляются.
+    """
+    try:
+        await asyncio.sleep(delay)
+        await msg.delete()
+    except Exception as e:
+        # логируем ТОЛЬКО в debug, это не критично
+        logger.debug("Failed to delete command message: %s", e)

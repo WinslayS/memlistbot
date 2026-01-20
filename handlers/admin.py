@@ -12,7 +12,8 @@ from db import supabase, upsert_user, get_members, clear_left_users
 from helpers import (
     admin_check,
     format_member_txt,
-    get_target_user_from_reply
+    get_target_user_from_reply,
+    delete_command_later
 )
 
 @dp.message(Command("setname"))
@@ -69,6 +70,8 @@ async def admin_set_name(msg: types.Message):
         parse_mode="HTML"
     )
 
+    asyncio.create_task(delete_command_later(msg))
+
 @dp.message(Command("addrole"))
 async def admin_add_role(msg: types.Message):
     if not await admin_check(msg):
@@ -122,6 +125,8 @@ async def admin_add_role(msg: types.Message):
         parse_mode="HTML"
     )
 
+    asyncio.create_task(delete_command_later(msg))
+
 @dp.message(Command("export"))
 async def cmd_export(msg: types.Message):
     if not await admin_check(msg):
@@ -154,6 +159,8 @@ async def cmd_export(msg: types.Message):
     )
 
     await msg.answer_document(file, caption="📄 Экспортирован список участников.")
+
+    asyncio.create_task(delete_command_later(msg))
 
 @dp.message(Command("cleanup"))
 async def cmd_cleanup(msg: types.Message):
@@ -211,6 +218,8 @@ async def cmd_cleanup(msg: types.Message):
         f"Обновлено: <b>{updated_users}</b>",
         parse_mode="HTML"
     )
+
+    asyncio.create_task(delete_command_later(msg))
 
     logger.info(
         "Cleanup finished: removed=%s updated=%s chat=%s",
