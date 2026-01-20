@@ -238,32 +238,23 @@ async def show_user_selection(msg: types.Message, matches: list, operation: str,
         reply_markup=kb.as_markup()
     )
 
-from aiogram import types
-
 def get_target_user_from_reply(msg: types.Message):
-    """
-    Возвращает пользователя, на которого указывает reply:
-    - обычное сообщение пользователя
-    - system message: user joined / admin added user
-
-    Если невозможно однозначно определить пользователя — возвращает None.
-    """
     reply = msg.reply_to_message
     if not reply:
         return None
 
-    # 1) обычное сообщение пользователя
-    if reply.from_user:
-        return reply.from_user
-
-    # 2) system message: пользователь(и) вошли
     if reply.new_chat_members:
-        # строго: только один пользователь
         if len(reply.new_chat_members) == 1:
             return reply.new_chat_members[0]
         return None
 
+    if reply.from_user:
+        if reply.from_user.is_bot:
+            return None
+        return reply.from_user
+
     return None
+
 
 async def delete_command_later(msg: types.Message, delay: int = 5):
     """
@@ -274,5 +265,5 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
         await asyncio.sleep(delay)
         await msg.delete()
     except Exception as e:
-        # логируем ТОЛЬКО в debug, это не критично
         logger.debug("Failed to delete command message: %s", e)
+        
