@@ -7,6 +7,7 @@ from helpers import (
     admin_check,
     extract_users_from_message,
     delete_command_later,
+    make_silent_username
 )
 
 @dp.message(Command(commands=["tmplist", "tmlist"], ignore_case=True))
@@ -51,7 +52,7 @@ async def cmd_tmplist(msg: types.Message):
     for i, user in enumerate(users, start=1):
         name = user.full_name
         if user.username:
-            name += f" (@{user.username})"
+            name += f" ({make_silent_username(user.username)})"
         lines.append(f"{i}. {name}")
 
     await msg.answer(
