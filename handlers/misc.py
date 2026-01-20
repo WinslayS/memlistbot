@@ -4,7 +4,7 @@ import time
 from aiogram import types
 from aiogram.filters import Command
 
-from core import dp
+from core import bot, dp
 from logger import logger
 from db import supabase, upsert_user
 from helpers import (
@@ -18,7 +18,7 @@ from helpers import (
 async def cmd_help(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
 
-    role = "Админ" if await is_user_admin(msg) else "Участник"
+    role = "Админ" if await is_user_admin(bot, msg) else "Участник"
 
     await msg.answer(
         (
@@ -72,7 +72,7 @@ async def select_user_callback(callback: types.CallbackQuery):
     operation = data["operation"]
 
     # Проверка прав
-    admins = await get_admin_ids(chat_id)
+    admins = await get_admin_ids(bot, chat_id)
     if callback.from_user.id not in admins:
         await callback.answer("Недостаточно прав", show_alert=True)
         return

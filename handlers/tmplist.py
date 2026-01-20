@@ -2,7 +2,7 @@ import asyncio
 from aiogram import types
 from aiogram.filters import Command
 
-from core import dp
+from core import bot, dp
 from helpers import (
     admin_check,
     extract_users_from_message,
@@ -16,7 +16,7 @@ async def cmd_tmplist(msg: types.Message):
     Создание временного списка из упоминаний.
     """
 
-    if not await admin_check(msg):
+    if not await admin_check(bot, msg):
         return
 
     asyncio.create_task(delete_command_later(msg))

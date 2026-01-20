@@ -3,7 +3,7 @@ import asyncio
 from aiogram import types
 from aiogram.filters import Command
 
-from core import dp
+from core import bot, dp
 from db import get_members, upsert_user
 from helpers import send_long_message, format_member_inline
 
@@ -37,7 +37,7 @@ async def cmd_list(msg: types.Message):
         lines.append(format_member_inline(row, i))
 
     full_text = "\n".join(lines)
-    await send_long_message(msg, "📋 Список участников", full_text)
+    await send_long_message(bot, msg, "📋 Список участников", full_text)
 
 # ========== FIND USER ==========
 
@@ -69,4 +69,4 @@ async def cmd_find(msg: types.Message):
     lines = [format_member_inline(r, i+1) for i, r in enumerate(results)]
     full_text = "\n".join(lines)
 
-    await send_long_message(msg, "🔎 Результаты поиска", full_text)
+    await send_long_message(bot, msg, "🔎 Результаты поиска", full_text)

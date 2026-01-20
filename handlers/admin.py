@@ -18,7 +18,7 @@ from helpers import (
 
 @dp.message(Command("setname"))
 async def admin_set_name(msg: types.Message):
-    if not await admin_check(msg):
+    if not await admin_check(bot, msg):
         return
 
     target_user = get_target_user_from_reply(msg)
@@ -74,7 +74,7 @@ async def admin_set_name(msg: types.Message):
 
 @dp.message(Command("addrole"))
 async def admin_add_role(msg: types.Message):
-    if not await admin_check(msg):
+    if not await admin_check(bot, msg):
         return
 
     target_user = get_target_user_from_reply(msg)
@@ -129,7 +129,7 @@ async def admin_add_role(msg: types.Message):
 
 @dp.message(Command("export"))
 async def cmd_export(msg: types.Message):
-    if not await admin_check(msg):
+    if not await admin_check(bot, msg):
         return
 
     rows = await asyncio.to_thread(get_members, msg.chat.id)
@@ -164,7 +164,7 @@ async def cmd_export(msg: types.Message):
 
 @dp.message(Command("cleanup"))
 async def cmd_cleanup(msg: types.Message):
-    if not await admin_check(msg):
+    if not await admin_check(bot, msg):
         return
 
     rows = await asyncio.to_thread(get_members, msg.chat.id)
