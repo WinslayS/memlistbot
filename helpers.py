@@ -1,8 +1,9 @@
 import time
 import asyncio
+import re
+
 from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
 from logger import logger
 from db import get_members, supabase
 
@@ -268,58 +269,51 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
     except Exception as e:
         logger.debug("Failed to delete command message: %s", e)
 
+USERNAME_RE = re.compile(r'@([a-zA-Z0-9_]{5,32})')
+
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
     """
-    Извлекает пользователей из сообщения:
+    Извлекает пользователей ТОЛЬКО из основной БД members:
     - text_mention (выбор из списка Telegram)
-    - mention (@username) — ТОЛЬКО если пользователь есть в БД members
+    - @username (если есть в members)
     """
     users: dict[int, types.User] = {}
 
-    if not msg.entities:
-        return []
+    # 1️⃣ text_mention (самый надёжный вариант)
+    if msg.entities:
+        for e in msg.entities:
+            if e.type == "text_mention" and e.user:
+                users[e.user.id] = e.user
 
-    for entity in msg.entities:
-        # 1️⃣ Пользователь выбран из списка Telegram (есть user_id)
-        if entity.type == "text_mention" and entity.user:
-            users[entity.user.id] = entity.user
-            continue
+    # 2️⃣ @username — вручную из текста
+    text = msg.text or ""
+    usernames = {m.group(1).lower() for m in USERNAME_RE.finditer(text)}
 
-        # 2️⃣ Пользователь указан как @username
-        if entity.type == "mention":
-            raw = msg.text[entity.offset : entity.offset + entity.length]
-            
-            username = (
-                raw
-                .lstrip("@")
-                .strip()
-                .lower()
-            )
+    for username in usernames:
+        res = (
+            supabase
+            .table("members")
+            .select("user_id, username, full_name, external_name")
+            .eq("chat_id", msg.chat.id)
+            .eq("username", username)
+            .limit(1)
+            .execute()
+        )
 
-            # ищем пользователя в БД
-            res = (
-                supabase
-                .table("members")
-                .select("user_id, full_name, username, external_name")
-                .eq("chat_id", msg.chat.id)
-                .ilike("username", username)
-                .limit(1)
-                .execute()
-            )
+        if not res.data:
+            continue  # ❌ нет в основной БД — игнор
 
-            if not res.data:
-                continue  # пользователя нет в БД — игнорируем
+        row = res.data[0]
 
-            row = res.data[0]
-
-            user = types.User(
-                id=row["user_id"],
-                is_bot=False,
-                first_name=row.get("full_name") or row.get("external_name") or username,
-                username=row.get("username"),
-            )
-
-            users[user.id] = user
+        users[row["user_id"]] = types.User(
+            id=row["user_id"],
+            is_bot=False,
+            first_name=row.get("full_name")
+                or row.get("external_name")
+                or row.get("username"),
+            username=row.get("username"),
+        )
 
     return list(users.values())
+
 
