@@ -3,7 +3,6 @@ import asyncio
 from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from core import bot
 from logger import logger
 from db import get_members
 
@@ -28,7 +27,7 @@ ZERO_WIDTH_SPACE = "\u200B"  # невидимый символ
 
 # ========== HELPER: SEND LONG MESSAGE ==========
 
-async def send_long_message(msg: types.Message, header: str, text: str):
+async def send_long_message(bot, msg: types.Message, header: str, text: str):
     chat_id = msg.chat.id
     thread_id = msg.message_thread_id
 
@@ -56,7 +55,7 @@ async def send_long_message(msg: types.Message, header: str, text: str):
 
 # ============ ADMIN CHECKER (с кэшем) ============
 
-async def get_admin_ids(chat_id: int) -> set[int]:
+async def get_admin_ids(bot, chat_id: int) -> set[int]:
     """Возвращает множество ID админов с кэшем на несколько секунд."""
     now = time.time()
     cached = ADMIN_CACHE.get(chat_id)
@@ -73,17 +72,20 @@ async def get_admin_ids(chat_id: int) -> set[int]:
         logger.error("Ошибка получения админов для чата %s: %s", chat_id, e)
         return set()
 
-async def is_user_admin(msg: types.Message) -> bool:
+
+async def is_user_admin(bot, msg: types.Message) -> bool:
     """Проверка: пользователь — администратор чата?"""
-    admin_ids = await get_admin_ids(msg.chat.id)
+    admin_ids = await get_admin_ids(bot, msg.chat.id)
     return msg.from_user.id in admin_ids
 
-async def is_bot_admin(msg: types.Message) -> bool:
+
+async def is_bot_admin(bot, msg: types.Message) -> bool:
     """Проверка: бот — администратор в чате?"""
-    admin_ids = await get_admin_ids(msg.chat.id)
+    admin_ids = await get_admin_ids(bot, msg.chat.id)
     return bot.id in admin_ids
 
-async def admin_check(msg: types.Message) -> bool:
+
+async def admin_check(bot, msg: types.Message) -> bool:
     """
     Общая проверка для админ-команд.
     True — можно выполнять команду.
@@ -93,7 +95,7 @@ async def admin_check(msg: types.Message) -> bool:
         await msg.answer("❌ Эта команда работает только в групповых чатах.")
         return False
 
-    admin_ids = await get_admin_ids(msg.chat.id)
+    admin_ids = await get_admin_ids(bot, msg.chat.id)
 
     if msg.from_user.id not in admin_ids:
         await msg.answer("⛔ Эта команда доступна только администраторам.")
