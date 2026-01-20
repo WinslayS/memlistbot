@@ -266,8 +266,6 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
     except Exception as e:
         logger.debug("Failed to delete command message: %s", e)
 
-from aiogram import types
-
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
     """
     Извлекает пользователей из сообщения по entities:

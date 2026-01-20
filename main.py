@@ -19,6 +19,7 @@ async def main():
         types.BotCommand(command="addrole", description="Назначить роль участнику (админ)"),
         types.BotCommand(command="export", description="Экспорт списка (админ)"),
         types.BotCommand(command="cleanup", description="Очистка списка (админ)"),
+        types.BotCommand(command="tmplist", description="Временный список (админ)")
     ])
 
     await dp.start_polling(bot)

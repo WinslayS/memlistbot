@@ -3,6 +3,7 @@ from aiogram.filters import Command
 
 from core import dp
 from helpers import admin_check, extract_users_from_message
+print("TMPLIST HANDLER LOADED")
 
 @dp.message(Command("tmplist"))
 async def cmd_tmplist(msg: types.Message):
