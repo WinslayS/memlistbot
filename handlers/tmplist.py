@@ -58,7 +58,7 @@ async def cmd_tmplist(msg: types.Message):
             name += f" ({make_silent_username(user.username)})"
         lines.append(f"{i}. {name}")
 
-    await msg.answer(
+    sent = await msg.answer(
         "🧪 <b>Временный список (черновик)</b>\n\n"
         + "\n".join(lines)
         + f"\n\n👥 Всего: {len(users)}",
@@ -70,7 +70,7 @@ async def cmd_tmplist(msg: types.Message):
         created_by=msg.from_user.id,
         message_id=sent.message_id,
     )
-    
+
 def create_tmplist(chat_id: int, created_by: int, message_id: int) -> str:
     expires_at = datetime.utcnow() + timedelta(hours=24)
 
