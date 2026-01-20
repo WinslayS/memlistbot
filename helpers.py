@@ -4,7 +4,7 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from logger import logger
-from db import get_members
+from db import get_members, supabase
 
 # ============ GLOBAL CACHES / CONSTS ============
 
@@ -270,10 +270,9 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
 
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
     """
-    Извлекает пользователей из сообщения по entities:
-    - text_mention (user без @)
-    - mention (@username)
-    Возвращает список User (без дублей).
+    Извлекает пользователей из сообщения:
+    - text_mention (выбор из списка Telegram)
+    - mention (@username) — ТОЛЬКО если пользователь есть в БД members
     """
     users: dict[int, types.User] = {}
 
@@ -281,18 +280,40 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
         return []
 
     for entity in msg.entities:
-        # Пользователь без username (выбран из списка)
+        # 1️⃣ Пользователь выбран из списка Telegram (есть user_id)
         if entity.type == "text_mention" and entity.user:
             users[entity.user.id] = entity.user
+            continue
 
-        # Пользователь с @username
-        elif entity.type == "mention":
+        # 2️⃣ Пользователь указан как @username
+        if entity.type == "mention":
             username = msg.text[entity.offset : entity.offset + entity.length]
             username = username.lstrip("@")
 
-            # ⚠️ username → user_id можно резолвить ТОЛЬКО если он уже в БД
-            # На этом этапе просто пропускаем или обработаем позже
-            # (пока оставим заглушку)
-            continue
+            # ищем пользователя в БД
+            res = (
+                supabase
+                .table("members")
+                .select("user_id, full_name, username, external_name")
+                .eq("chat_id", msg.chat.id)
+                .eq("username", username)
+                .limit(1)
+                .execute()
+            )
+
+            if not res.data:
+                continue  # пользователя нет в БД — игнорируем
+
+            row = res.data[0]
+
+            user = types.User(
+                id=row["user_id"],
+                is_bot=False,
+                first_name=row.get("full_name") or row.get("external_name") or username,
+                username=row.get("username"),
+            )
+
+            users[user.id] = user
 
     return list(users.values())
+
