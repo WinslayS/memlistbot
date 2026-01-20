@@ -3,4 +3,4 @@ from . import events
 from . import members
 from . import misc
 from . import profile
-from . import tmplist
+from . import tpmlist
