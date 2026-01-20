@@ -255,7 +255,6 @@ def get_target_user_from_reply(msg: types.Message):
 
     return None
 
-
 async def delete_command_later(msg: types.Message, delay: int = 5):
     """
     Пытается удалить сообщение с командой через delay секунд.
@@ -266,4 +265,34 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
         await msg.delete()
     except Exception as e:
         logger.debug("Failed to delete command message: %s", e)
-        
+
+from aiogram import types
+
+def extract_users_from_message(msg: types.Message) -> list[types.User]:
+    """
+    Извлекает пользователей из сообщения по entities:
+    - text_mention (user без @)
+    - mention (@username)
+    Возвращает список User (без дублей).
+    """
+    users: dict[int, types.User] = {}
+
+    if not msg.entities:
+        return []
+
+    for entity in msg.entities:
+        # Пользователь без username (выбран из списка)
+        if entity.type == "text_mention" and entity.user:
+            users[entity.user.id] = entity.user
+
+        # Пользователь с @username
+        elif entity.type == "mention":
+            username = msg.text[entity.offset : entity.offset + entity.length]
+            username = username.lstrip("@")
+
+            # ⚠️ username → user_id можно резолвить ТОЛЬКО если он уже в БД
+            # На этом этапе просто пропускаем или обработаем позже
+            # (пока оставим заглушку)
+            continue
+
+    return list(users.values())

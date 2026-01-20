@@ -3,13 +3,7 @@ from aiogram import types
 
 from core import bot, dp
 
-# ⬇️ ВАЖНО: просто импортируем, чтобы зарегистрировать handlers
-import handlers.events
-import handlers.members
-import handlers.profile
-import handlers.admin
-import handlers.misc
-
+import handlers
 
 async def main():
     print("BOT STARTED OK")
