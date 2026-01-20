@@ -287,8 +287,14 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
 
         # 2️⃣ Пользователь указан как @username
         if entity.type == "mention":
-            username = msg.text[entity.offset : entity.offset + entity.length]
-            username = username.lstrip("@")
+            raw = msg.text[entity.offset : entity.offset + entity.length]
+            
+            username = (
+                raw
+                .lstrip("@")
+                .strip()
+                .lower()
+            )
 
             # ищем пользователя в БД
             res = (
@@ -296,7 +302,7 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
                 .table("members")
                 .select("user_id, full_name, username, external_name")
                 .eq("chat_id", msg.chat.id)
-                .eq("username", username)
+                .ilike("username", username)
                 .limit(1)
                 .execute()
             )
