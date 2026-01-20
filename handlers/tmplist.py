@@ -2,6 +2,9 @@ import asyncio
 from aiogram import types
 from aiogram.filters import Command
 
+from datetime import datetime, timedelta
+from db import supabase
+
 from core import bot, dp
 from helpers import (
     admin_check,
@@ -61,3 +64,26 @@ async def cmd_tmplist(msg: types.Message):
         + f"\n\n👥 Всего: {len(users)}",
         parse_mode="HTML",
     )
+
+    create_tmplist(
+        chat_id=msg.chat.id,
+        created_by=msg.from_user.id,
+        message_id=sent.message_id,
+    )
+    
+def create_tmplist(chat_id: int, created_by: int, message_id: int) -> str:
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+
+    res = (
+        supabase
+        .table("tmplists")
+        .insert({
+            "chat_id": chat_id,
+            "created_by": created_by,
+            "expires_at": expires_at.isoformat(),
+            "message_id": message_id,
+        })
+        .execute()
+    )
+
+    return res.data[0]["id"]
