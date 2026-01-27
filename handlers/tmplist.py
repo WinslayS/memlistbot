@@ -2,7 +2,7 @@ import asyncio
 from aiogram import types
 from aiogram.filters import Command
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from db import supabase
 
 from core import bot, dp
@@ -21,6 +21,19 @@ async def cmd_tmplist(msg: types.Message):
     """
 
     if not await admin_check(bot, msg):
+        return
+
+    chat_id = msg.chat.id
+
+    deactivate_expired_tmplists(chat_id)
+
+    if count_active_tmplists(chat_id) >= 3:
+        await msg.answer(
+            "❌ <b>Достигнут лимит временных списков.</b>\n\n"
+            "Максимум: <b>3 активных списка</b> на группу.\n"
+            "⏱ Каждый список живёт 24 часа.",
+            parse_mode="HTML"
+        )
         return
 
     asyncio.create_task(delete_command_later(msg))
@@ -65,14 +78,16 @@ async def cmd_tmplist(msg: types.Message):
         parse_mode="HTML",
     )
 
-    create_tmplist(
+    tmplist_id = create_tmplist(
         chat_id=msg.chat.id,
         created_by=msg.from_user.id,
         message_id=sent.message_id,
     )
 
+    insert_tmplist_items(tmplist_id, [u.id for u in users])
+
 def create_tmplist(chat_id: int, created_by: int, message_id: int) -> str:
-    expires_at = datetime.utcnow() + timedelta(hours=24)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
 
     res = (
         supabase
@@ -87,3 +102,33 @@ def create_tmplist(chat_id: int, created_by: int, message_id: int) -> str:
     )
 
     return res.data[0]["id"]
+
+def insert_tmplist_items(tmplist_id: str, user_ids: list[int]) -> None:
+    rows = [{"tmplist_id": tmplist_id, "user_id": uid} for uid in user_ids]
+    if not rows:
+        return
+    supabase.table("tmplist_items").insert(rows).execute()
+
+def deactivate_expired_tmplists(chat_id: int) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    (
+        supabase.table("tmplists")
+        .update({"is_active": False})
+        .eq("chat_id", chat_id)
+        .eq("is_active", True)
+        .lte("expires_at", now)
+        .execute()
+    )
+
+def count_active_tmplists(chat_id: int) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    res = (
+        supabase
+        .table("tmplists")
+        .select("id", count="exact")
+        .eq("chat_id", chat_id)
+        .eq("is_active", True)
+        .gt("expires_at", now)
+        .execute()
+    )
+    return res.count or 0
