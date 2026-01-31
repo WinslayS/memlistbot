@@ -10,7 +10,9 @@ from helpers import (
     admin_check,
     extract_users_from_message,
     delete_command_later,
-    make_silent_username
+    make_silent_username,
+    format_member_inline,
+    send_long_message
 )
 
 MAX_USERS = 50
@@ -250,7 +252,7 @@ async def cmd_tmplist_show(msg: types.Message):
 
     tmplist_id = res.data[0]["id"]
 
-    users = (
+    items = (
         supabase
         .table("tmplist_items")
         .select("user_id")
@@ -259,10 +261,35 @@ async def cmd_tmplist_show(msg: types.Message):
         .data
     )
 
-    await msg.answer(
-        f"📄 Список <b>{list_name}</b>\n"
-        f"👥 Участников: {len(users)}",
-        parse_mode="HTML"
+    if not items:
+        await msg.answer(
+            f"📄 <b>{list_name}</b>\nℹ️ Список пуст.",
+            parse_mode="HTML"
+        )
+        return
+
+    user_ids = [row["user_id"] for row in items]
+
+    members = (
+        supabase
+        .table("members")
+        .select("full_name, username, external_name, extra_role")
+        .eq("chat_id", chat_id)
+        .in_("user_id", user_ids)
+        .execute()
+        .data
+    )
+
+    lines = [
+        format_member_inline(row, i)
+        for i, row in enumerate(members, start=1)
+    ]
+
+    await send_long_message(
+        bot,
+        msg,
+        f"📄 Список {list_name}",
+        "\n".join(lines)
     )
 
 @dp.message(Command(commands=["tmplist_delete"], ignore_case=True))
