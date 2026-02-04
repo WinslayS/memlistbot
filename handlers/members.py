@@ -2,10 +2,11 @@ import asyncio
 
 from aiogram import types
 from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from core import bot, dp
 from db import get_members, upsert_user
-from helpers import send_long_message, format_member_inline
+from helpers import format_member_inline
 
 PAGE_SIZE = 20
 
@@ -54,12 +55,16 @@ async def cmd_find(msg: types.Message):
         await msg.answer("❌ Никто не найден.")
         return
 
-    lines = [format_member_inline(r, i+1) for i, r in enumerate(results)]
+    lines = [
+        format_member_inline(row, i + 1)
+        for i, row in enumerate(results)
+    ]
     full_text = "\n".join(lines)
 
-    await send_long_message(bot, msg, "🔎 Результаты поиска", full_text)
-
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+    await msg.answer(
+        f"<b>🔎 Результаты поиска</b>\n\n{full_text}",
+        parse_mode="HTML"
+    )
 
 def pagination_kb(page: int, total_pages: int):
     kb = InlineKeyboardBuilder()
