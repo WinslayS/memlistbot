@@ -7,7 +7,7 @@ from core import bot, dp
 from db import get_members, upsert_user
 from helpers import send_long_message, format_member_inline
 
-# ============ COMMANDS ============
+PAGE_SIZE = 20
 
 @dp.message(Command("list"))
 async def cmd_list(msg: types.Message):
@@ -18,28 +18,16 @@ async def cmd_list(msg: types.Message):
         await msg.answer("Список пуст 🕳️")
         return
 
-    # === определяем сортировку ===
-    args = msg.text.split()
-    sort_mode = args[1].lower() if len(args) > 1 else None
+    total_pages = (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE
+    page = 1
 
-    if sort_mode in ["name", "n"]:               # сортировка по full_name
-        rows.sort(key=lambda r: (r.get("full_name") or "").lower())
+    text = render_page(rows, page)
 
-    elif sort_mode in ["username", "user", "u"]: # сортировка по username
-        rows.sort(key=lambda r: (r.get("username") or "").lower())
-
-    elif sort_mode in ["external", "ext", "e"]:  # сортировка по external_name
-        rows.sort(key=lambda r: (r.get("external_name") or "").lower())
-        
-    # === создаём строки ===
-    lines = []
-    for i, row in enumerate(rows, start=1):
-        lines.append(format_member_inline(row, i))
-
-    full_text = "\n".join(lines)
-    await send_long_message(bot, msg, "📋 Список участников", full_text)
-
-# ========== FIND USER ==========
+    await msg.answer(
+        f"<b>📋 Список участников</b>\n\n{text}",
+        parse_mode="HTML",
+        reply_markup=pagination_kb(page, total_pages)
+    )
 
 @dp.message(Command("find"))
 async def cmd_find(msg: types.Message):
@@ -70,3 +58,53 @@ async def cmd_find(msg: types.Message):
     full_text = "\n".join(lines)
 
     await send_long_message(bot, msg, "🔎 Результаты поиска", full_text)
+
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+def pagination_kb(page: int, total_pages: int):
+    kb = InlineKeyboardBuilder()
+
+    if page > 1:
+        kb.button(text="⬅️ Предыдущая", callback_data=f"list_page:{page-1}")
+
+    kb.button(text=f"{page}/{total_pages}", callback_data="noop")
+
+    if page < total_pages:
+        kb.button(text="Следующая ➡️", callback_data=f"list_page:{page+1}")
+
+    kb.adjust(3)
+    return kb.as_markup()
+
+def render_page(rows: list, page: int):
+    start = (page - 1) * PAGE_SIZE
+    end = start + PAGE_SIZE
+
+    chunk = rows[start:end]
+
+    lines = [
+        format_member_inline(row, start + i + 1)
+        for i, row in enumerate(chunk)
+    ]
+
+    return "\n".join(lines)
+
+@dp.callback_query(lambda c: c.data.startswith("list_page:"))
+async def list_pagination(callback: types.CallbackQuery):
+    page = int(callback.data.split(":")[1])
+
+    rows = await asyncio.to_thread(get_members, callback.message.chat.id)
+    total_pages = (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE
+
+    text = render_page(rows, page)
+
+    await callback.message.edit_text(
+        f"<b>📋 Список участников</b>\n\n{text}",
+        parse_mode="HTML",
+        reply_markup=pagination_kb(page, total_pages)
+    )
+
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "noop")
+async def noop_callback(callback: types.CallbackQuery):
+    await callback.answer()

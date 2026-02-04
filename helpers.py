@@ -7,26 +7,18 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from logger import logger
 from db import get_members, supabase
 
-# ============ GLOBAL CACHES / CONSTS ============
-
-# user_id -> last update timestamp
 LAST_UPDATE: dict[int, float] = {}
-UPDATE_TTL = 10  # секунды
+UPDATE_TTL = 10
 
-# chat_id -> (timestamp, set(admin_ids))
 ADMIN_CACHE: dict[int, tuple[float, set[int]]] = {}
-ADMIN_CACHE_TTL = 10.0  # секунды
+ADMIN_CACHE_TTL = 10.0
 
-# task_id -> {chat_id, user_id, value, operation}
 PENDING_ACTIONS: dict[str, dict] = {}
 
-# welcome anti-spam per chat
 WELCOME_SENT: dict[int, float] = {}
 WELCOME_TTL = 3600
 
-ZERO_WIDTH_SPACE = "\u200B"  # невидимый символ
-
-# ========== HELPER: SEND LONG MESSAGE ==========
+ZERO_WIDTH_SPACE = "\u200B"
 
 async def send_long_message(bot, msg: types.Message, header: str, text: str):
     chat_id = msg.chat.id
@@ -53,8 +45,6 @@ async def send_long_message(bot, msg: types.Message, header: str, text: str):
             parse_mode="HTML",
             message_thread_id=thread_id
         )
-
-# ============ ADMIN CHECKER (с кэшем) ============
 
 async def get_admin_ids(bot, chat_id: int) -> set[int]:
     """Возвращает множество ID админов с кэшем на несколько секунд."""
@@ -112,8 +102,6 @@ async def admin_check(bot, msg: types.Message) -> bool:
 
     return True
 
-# ============ FORMAT HELPERS ============
-
 def make_silent_username(username: str) -> str:
     if not username:
         return ""
@@ -147,8 +135,6 @@ def format_member_txt(row: dict, index: int | None = None) -> str:
         return f"{index}. {full_name}{username_part}{external_part}{role_part}"
     return f"{full_name}{username_part}{external_part}{role_part}"
 
-# ============ USER BY TARGET ============
-
 async def find_user_by_target(chat_id: int, target: str):
     """
     Улучшенный поиск:
@@ -160,7 +146,6 @@ async def find_user_by_target(chat_id: int, target: str):
     rows = await asyncio.to_thread(get_members, chat_id)
     target = target.strip().lower()
 
-    # 1) @username
     if target.startswith("@"):
         uname = target[1:]
         matches = [m for m in rows if (m.get("username") or "").lower() == uname]
@@ -170,12 +155,10 @@ async def find_user_by_target(chat_id: int, target: str):
             return "MULTIPLE"
         return None
 
-    # 2) user_id
     if target.isdigit():
         uid = int(target)
         return next((m for m in rows if m.get("user_id") == uid), None)
 
-    # 3) Полное совпадение full_name/external_name
     exact = [
         m for m in rows
         if (m.get("full_name") or "").lower() == target
@@ -186,7 +169,6 @@ async def find_user_by_target(chat_id: int, target: str):
     if len(exact) > 1:
         return "MULTIPLE"
 
-    # 4) Частичный поиск
     partial = [
         m for m in rows
         if target in (m.get("full_name") or "").lower()
@@ -199,8 +181,6 @@ async def find_user_by_target(chat_id: int, target: str):
         return "MULTIPLE"
 
     return None
-
-# ============ MULTI TARGET ============
 
 async def show_user_selection(msg: types.Message, matches: list, operation: str, value: str):
     kb = InlineKeyboardBuilder()
@@ -279,13 +259,11 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
     """
     users: dict[int, types.User] = {}
 
-    # 1️⃣ text_mention (самый надёжный вариант)
     if msg.entities:
         for e in msg.entities:
             if e.type == "text_mention" and e.user:
                 users[e.user.id] = e.user
 
-    # 2️⃣ @username — вручную из текста
     text = msg.text or ""
     usernames = {m.group(1).lower() for m in USERNAME_RE.finditer(text)}
 
@@ -301,7 +279,7 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
         )
 
         if not res.data:
-            continue  # ❌ нет в основной БД — игнор
+            continue
 
         row = res.data[0]
 
