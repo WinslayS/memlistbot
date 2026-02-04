@@ -239,10 +239,6 @@ def get_target_user_from_reply(msg: types.Message):
     return None
 
 async def delete_command_later(msg: types.Message, delay: int = 5):
-    """
-    Пытается удалить сообщение с командой через delay секунд.
-    Ошибки (нет прав и т.п.) подавляются.
-    """
     try:
         await asyncio.sleep(delay)
         await msg.delete()
@@ -252,11 +248,6 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
 USERNAME_RE = re.compile(r'@([a-zA-Z0-9_]{5,32})')
 
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
-    """
-    Извлекает пользователей ТОЛЬКО из основной БД members:
-    - text_mention (выбор из списка Telegram)
-    - @username (если есть в members)
-    """
     users: dict[int, types.User] = {}
 
     if msg.entities:
