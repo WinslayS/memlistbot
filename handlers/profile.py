@@ -25,7 +25,14 @@ async def cmd_name(msg: types.Message):
         )
         return
 
-    external_name = args[1].strip()
+    external_name = args[1].replace("\u00A0", " ").strip()
+
+    if external_name.startswith("@"):
+        await answer_temp(
+            msg,
+            "❌ Имя не может начинаться с @. Укажите обычное имя."
+        )
+        return
 
     if not external_name:
         await answer_temp(
@@ -37,7 +44,7 @@ async def cmd_name(msg: types.Message):
     if len(external_name) > MAX_LEN:
         await answer_temp(
             msg,
-            "❌ Имя слишком длинное. Максимум {MAX_LEN} символов."
+            f"❌ Имя слишком длинное. Максимум {MAX_LEN} символов."
         )
         return
 
@@ -65,7 +72,15 @@ async def cmd_add(msg: types.Message):
         )
         return
 
-    role = args[1].strip()
+    role = args[1].replace("\u00A0", " ").strip()
+
+    if role.startswith("@"):
+        await answer_temp(
+            msg,
+            "❌ Роль не может начинаться с @."
+        )
+        return
+
     if not role:
         await answer_temp(
             msg,
