@@ -8,7 +8,10 @@ from logger import logger
 from db import supabase, upsert_user
 from helpers import (
     auto_delete,
+    answer_temp
 )
+    
+MAX_LEN = 100
 
 @dp.message(Command("name"))
 @auto_delete()
@@ -16,17 +19,26 @@ async def cmd_name(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
     if len(args) < 2:
-        await msg.answer("✏️ Напиши имя после команды. Пример: /name Kvane")
+        await answer_temp(
+            msg,
+            "✏️ Напиши имя после команды. Пример: /name Kvane"
+        )
         return
 
     external_name = args[1].strip()
 
     if not external_name:
-        await msg.answer("❌ Имя не может быть пустым или состоять только из пробелов.")
+        await answer_temp(
+            msg,
+            "❌ Имя не может быть пустым или состоять только из пробелов."
+        )
         return
 
-    if len(external_name) > 100:
-        await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
+    if len(external_name) > MAX_LEN:
+        await answer_temp(
+            msg,
+            "❌ Имя слишком длинное. Максимум {MAX_LEN} символов."
+        )
         return
 
     await asyncio.to_thread(
@@ -47,12 +59,25 @@ async def cmd_add(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
     if len(args) < 2:
-        await msg.answer("Напишите роль. Пример:\n/add Работник")
+        await answer_temp(
+            msg,
+            "Напишите роль. Пример:\n/add Работник"
+        )
         return
 
     role = args[1].strip()
     if not role:
-        await msg.answer("❌ Роль не может быть пустой.")
+        await answer_temp(
+            msg,
+            "❌ Роль не может быть пустой или состоять только из пробелов."
+        )
+        return
+
+    if len(role) > MAX_LEN:
+        await answer_temp(
+            msg,
+            f"❌ Роль слишком длинная. Максимум {MAX_LEN} символов."
+        )
         return
 
     try:

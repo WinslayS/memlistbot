@@ -12,7 +12,8 @@ from helpers import (
     make_silent_username,
     format_member_inline,
     send_long_message,
-    auto_delete
+    auto_delete,
+    answer_temp
 )
 
 MAX_USERS = 50
@@ -27,13 +28,17 @@ async def cmd_tmplist(msg: types.Message):
 
     args = msg.text.split()
     if len(args) < 2:
-        await msg.answer("❌ Укажи название списка.\nПример: /tmplist raid1 @user")
+        await answer_temp(
+            msg,
+            "❌ Укажи название списка.\nПример: /tmplist raid1 @user"
+        )
         return
 
     list_name = args[1].lower()
 
     if list_name.startswith("@") or not NAME_RE.match(list_name):
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ Неверное имя списка.\n"
             "Пример: <code>raid1</code> или <code>defense_team</code>",
             parse_mode="HTML"
@@ -60,7 +65,8 @@ async def cmd_tmplist(msg: types.Message):
 
     if is_new_list:
         if count_active_tmplists(chat_id) >= 3:
-            await msg.answer(
+            await answer_temp(
+                msg,
                 "❌ <b>Достигнут лимит временных списков.</b>\n\n"
                 "Максимум: <b>3 активных списка</b> на группу.\n"
                 "⏱ Каждый список живёт 24 часа.",
@@ -71,7 +77,8 @@ async def cmd_tmplist(msg: types.Message):
     users = extract_users_from_message(msg)
 
     if not users:
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ <b>Не найдено ни одного участника.</b>\n\n"
             "Используйте:\n"
             "• <code>@username</code> (если пользователь уже был в чате)\n"
@@ -87,7 +94,7 @@ async def cmd_tmplist(msg: types.Message):
     users = list(unique_users.values())
 
     if len(users) > MAX_USERS:
-        await msg.answer(
+        await answer_temp(
             f"❌ Слишком много участников.\n"
             f"Максимум: {MAX_USERS}",
         )
@@ -228,7 +235,10 @@ async def cmd_tmplist_show(msg: types.Message):
 
     args = msg.text.split()
     if len(args) < 2:
-        await msg.answer("❌ Укажи имя списка.")
+        await answer_temp(
+            msg,
+            "❌ Укажи имя списка."
+        )
         return
 
     list_name = args[1].lower()
@@ -248,7 +258,10 @@ async def cmd_tmplist_show(msg: types.Message):
     )
 
     if not res.data:
-        await msg.answer("❌ Активный список не найден.")
+        await answer_temp(
+            msg,
+            "❌ Активный список не найден."
+        )
         return
 
     tmplist_id = res.data[0]["id"]
@@ -301,7 +314,10 @@ async def cmd_tmplist_delete(msg: types.Message):
 
     args = msg.text.split()
     if len(args) < 2:
-        await msg.answer("❌ Укажи имя списка для удаления.")
+        await answer_temp(
+            msg,
+            "❌ Укажи имя списка для удаления."
+        )
         return
 
     list_name = args[1].lower()
@@ -320,7 +336,10 @@ async def cmd_tmplist_delete(msg: types.Message):
     )
 
     if not res.data:
-        await msg.answer("❌ Активный список не найден.")
+        await answer_temp(
+            msg,
+            "❌ Активный список не найден."
+        )
         return
 
     await msg.answer(
@@ -336,7 +355,8 @@ async def cmd_tmplist_remove(msg: types.Message):
 
     args = msg.text.split()
     if len(args) < 3:
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ Использование:\n"
             "<code>/tmplist_remove raid1 @user</code>",
             parse_mode="HTML"
@@ -360,14 +380,20 @@ async def cmd_tmplist_remove(msg: types.Message):
     )
 
     if not res.data:
-        await msg.answer("❌ Активный список не найден.")
+        await answer_temp(
+            msg,
+            "❌ Активный список не найден."
+        )
         return
 
     tmplist_id = res.data[0]["id"]
 
     users = extract_users_from_message(msg)
     if not users:
-        await msg.answer("❌ Не указаны пользователи для удаления.")
+        await answer_temp(
+            msg,
+            "❌ Не указаны пользователи для удаления."
+        )
         return
 
     user_ids = list({u.id for u in users})

@@ -21,6 +21,8 @@ WELCOME_TTL = 3600
 
 ZERO_WIDTH_SPACE = "\u200B"
 
+USERNAME_RE = re.compile(r'@([a-zA-Z0-9_]{5,32})')
+
 async def send_long_message(bot, msg: types.Message, header: str, text: str):
     chat_id = msg.chat.id
     thread_id = msg.message_thread_id
@@ -246,8 +248,6 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
     except Exception as e:
         logger.debug("Failed to delete command message: %s", e)
 
-USERNAME_RE = re.compile(r'@([a-zA-Z0-9_]{5,32})')
-
 def auto_delete(delay: int = 5):
     def decorator(handler):
         @wraps(handler)
@@ -258,6 +258,16 @@ def auto_delete(delay: int = 5):
                 asyncio.create_task(delete_command_later(msg, delay))
         return wrapper
     return decorator
+
+async def answer_temp(
+    msg: types.Message,
+    text: str,
+    delay: int = 15,
+    **kwargs
+):
+    reply = await msg.answer(text, **kwargs)
+    asyncio.create_task(delete_command_later(reply, delay))
+    return reply
 
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
     users: dict[int, types.User] = {}

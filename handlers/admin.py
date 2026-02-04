@@ -13,7 +13,8 @@ from helpers import (
     admin_check,
     format_member_txt,
     get_target_user_from_reply,
-    auto_delete
+    auto_delete,
+    answer_temp
 )
 
 @dp.message(Command("setname"))
@@ -24,7 +25,8 @@ async def admin_set_name(msg: types.Message):
 
     target_user = get_target_user_from_reply(msg)
     if not target_user:
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ Ответьте на сообщение конкретного пользователя.\n\n"
             "Поддерживаются:\n"
             "• обычные сообщения пользователя\n"
@@ -37,7 +39,8 @@ async def admin_set_name(msg: types.Message):
 
     args = msg.text.split(maxsplit=1)
     if len(args) < 2:
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ Напишите имя.\n\n"
             "Пример (ответом на сообщение):\n"
             "<code>/setname Иван</code>",
@@ -47,7 +50,10 @@ async def admin_set_name(msg: types.Message):
 
     new_name = args[1].strip()
     if not new_name:
-        await msg.answer("❌ Имя не может быть пустым.")
+        await answer_temp(
+            msg,
+            "❌ Имя не может быть пустым."
+        )
         return
 
     await asyncio.to_thread(upsert_user, msg.chat.id, target_user)
@@ -78,7 +84,7 @@ async def admin_add_role(msg: types.Message):
 
     target_user = get_target_user_from_reply(msg)
     if not target_user:
-        await msg.answer(
+        await answer_temp(
             "❌ Ответьте на сообщение конкретного пользователя.\n\n"
             "Поддерживаются:\n"
             "• обычные сообщения пользователя\n"
@@ -89,7 +95,8 @@ async def admin_add_role(msg: types.Message):
 
     args = msg.text.split(maxsplit=1)
     if len(args) < 2:
-        await msg.answer(
+        await answer_temp(
+            msg,
             "❌ Напишите роль.\n\n"
             "Пример (ответом на сообщение):\n"
             "<code>/addrole Руководитель</code>",
@@ -99,7 +106,10 @@ async def admin_add_role(msg: types.Message):
 
     role = args[1].strip()
     if not role:
-        await msg.answer("❌ Роль не может быть пустой.")
+        await answer_temp(
+            msg,
+            "❌ Роль не может быть пустой."
+        )
         return
 
     role = " ".join(word for word in role.split() if not word.startswith("@"))

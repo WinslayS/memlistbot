@@ -6,7 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from core import bot, dp
 from db import get_members, upsert_user
-from helpers import format_member_inline, auto_delete
+from helpers import format_member_inline, auto_delete, answer_temp
 
 PAGE_SIZE = 30
 
@@ -84,7 +84,9 @@ async def cmd_find(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
     if len(args) < 2:
-        await msg.answer("Использование: /find часть_имени или @username")
+        await answer_temp(
+            msg,
+            "Использование: /find часть_имени или @username")
         return
 
     raw_query = args[1].strip()
@@ -109,7 +111,8 @@ async def cmd_find(msg: types.Message):
 
     if not results:
         safe_query = raw_query.replace("<", "&lt;").replace(">", "&gt;")
-        await msg.answer(
+        await answer_temp(
+            msg,
             f"❌ Ничего не найдено по запросу: <i>{safe_query}</i>",
             parse_mode="HTML"
         )
