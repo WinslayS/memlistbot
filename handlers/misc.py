@@ -8,13 +8,12 @@ from core import bot, dp
 from logger import logger
 from db import supabase, upsert_user
 from helpers import (
-    is_user_admin, get_admin_ids,
+    is_user_admin, get_admin_ids, auto_delete,
     LAST_UPDATE, UPDATE_TTL, PENDING_ACTIONS
 )
 
-# ============ COMMANDS ============
-
 @dp.message(Command("help"))
+@auto_delete()
 async def cmd_help(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
 
@@ -53,25 +52,21 @@ async def cmd_help(msg: types.Message):
         parse_mode="HTML"
     )
 
-# ============ ОБРАБОТЧИК CALLBACK ============
-
 @dp.callback_query(lambda c: c.data.startswith("select_user:"))
 async def select_user_callback(callback: types.CallbackQuery):
     task_id = callback.data.split(":", 1)[1]
 
-    # Данные есть?
     if task_id not in PENDING_ACTIONS:
         await callback.answer("Старый или неверный выбор", show_alert=True)
         return
 
-    data = PENDING_ACTIONS.pop(task_id)  # удаляем после использования
+    data = PENDING_ACTIONS.pop(task_id)
 
     chat_id = data["chat_id"]
     user_id = data["user_id"]
     value = data["value"]
     operation = data["operation"]
 
-    # Проверка прав
     admins = await get_admin_ids(bot, chat_id)
     if callback.from_user.id not in admins:
         await callback.answer("Недостаточно прав", show_alert=True)
@@ -109,8 +104,6 @@ async def select_user_callback(callback: types.CallbackQuery):
 
     await callback.answer()
 
-# ========== AUTO-REGISTER ==========
-
 @dp.message(lambda m: m.text and not m.text.startswith("/"))
 async def auto_register(msg: types.Message):
     user = msg.from_user
@@ -118,7 +111,6 @@ async def auto_register(msg: types.Message):
     chat_id = msg.chat.id
     now = time.time()
 
-    # --- легкий TTL (анти-спам, 5 сек)
     try:
         res = (
             supabase.table("members")
@@ -161,7 +153,6 @@ async def auto_register(msg: types.Message):
     new_username = user.username or ""
     new_full_name = user.full_name or ""
 
-    # --- если записи НЕТ → добавляем
     if not row:
         await asyncio.to_thread(
             upsert_user,
@@ -170,14 +161,12 @@ async def auto_register(msg: types.Message):
         )
         return
 
-    # --- если изменения отсутствуют → не трогаем Supabase
     if (
         row.get("username") == new_username and
         row.get("full_name") == new_full_name
     ):
         return
 
-    # --- изменилось → обновляем только эти 2 поля
     try:
         (
             supabase.table("members")

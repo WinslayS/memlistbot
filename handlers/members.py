@@ -6,11 +6,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from core import bot, dp
 from db import get_members, upsert_user
-from helpers import format_member_inline, delete_command_later
+from helpers import format_member_inline, auto_delete
 
 PAGE_SIZE = 30
 
 @dp.message(Command("list"))
+@auto_delete()
 async def cmd_list(msg: types.Message):
     await asyncio.to_thread(upsert_user, msg.chat.id, msg.from_user)
     rows = await asyncio.to_thread(get_members, msg.chat.id)
@@ -28,8 +29,6 @@ async def cmd_list(msg: types.Message):
         parse_mode="HTML",
         reply_markup=pagination_kb(page, total_pages)
     )
-
-    asyncio.create_task(delete_command_later(msg))
 
 def pagination_kb(page: int, total_pages: int):
     kb = InlineKeyboardBuilder()
@@ -80,6 +79,7 @@ async def noop_callback(callback: types.CallbackQuery):
     await callback.answer()
 
 @dp.message(Command("find"))
+@auto_delete()
 async def cmd_find(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
@@ -99,12 +99,20 @@ async def cmd_find(msg: types.Message):
         external = (row.get("external_name") or "").lower()
         role = (row.get("extra_role") or "").lower()
 
-        if query in full_name or query in username or query in external or query in role:
+        if (
+            query in full_name
+            or query in username
+            or query in external
+            or query in role
+        ):
             results.append(row)
 
     if not results:
-        await msg.answer(f"❌ Ничего не найдено по запросу: <i>{raw_query}</i>", parse_mode="HTML")
-        asyncio.create_task(delete_command_later(msg, delay=6))
+        safe_query = raw_query.replace("<", "&lt;").replace(">", "&gt;")
+        await msg.answer(
+            f"❌ Ничего не найдено по запросу: <i>{safe_query}</i>",
+            parse_mode="HTML"
+        )
         return
 
     lines = [
@@ -120,5 +128,3 @@ async def cmd_find(msg: types.Message):
         f"{header}\n\n{full_text}",
         parse_mode="HTML"
     )
-
-    asyncio.create_task(delete_command_later(msg, delay=6))

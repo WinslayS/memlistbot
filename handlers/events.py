@@ -14,14 +14,12 @@ async def on_bot_chat_member(event: types.ChatMemberUpdated):
     chat_id = event.chat.id
     user = event.new_chat_member.user
 
-    # защита: это событие должно быть ТОЛЬКО про бота
     if user.id != bot.id:
         return
 
     old = event.old_chat_member.status
     new = event.new_chat_member.status
 
-    # === Бота добавили в чат ===
     if new in (
         ChatMemberStatus.MEMBER,
         ChatMemberStatus.ADMINISTRATOR
@@ -30,7 +28,6 @@ async def on_bot_chat_member(event: types.ChatMemberUpdated):
         ChatMemberStatus.KICKED
     ):
 
-        # --- Сообщение №1 (инструкции) ---
         await bot.send_message(
             chat_id,
             "🤖 <b>Бот подключён!</b>\n\n"
@@ -43,7 +40,6 @@ async def on_bot_chat_member(event: types.ChatMemberUpdated):
             parse_mode="HTML"
         )
 
-        # --- антиспам приветствия ---
         now = time.time()
         last = WELCOME_SENT.get(chat_id, 0)
 
@@ -104,7 +100,6 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         ChatMemberStatus.KICKED,
     }
 
-    # === Реальный вход нового участника ===
     if (
         old in OUTSIDE_STATUSES and new in INSIDE_STATUSES
     ) or (
@@ -112,7 +107,6 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         and new == ChatMemberStatus.MEMBER
         and event.invite_link is not None
     ):
-        # игнор анонимных / ботов
         if user.username == "GroupAnonymousBot" or user.is_bot:
             return
 
@@ -126,7 +120,6 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         await send_welcome(event, user)
         return
 
-    # === Пользователь ушёл / кикнут ===
     if new in OUTSIDE_STATUSES:
         await asyncio.to_thread(delete_user, chat_id, user.id)
 

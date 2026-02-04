@@ -8,7 +8,6 @@ import handlers
 async def main():
     print("BOT STARTED OK")
 
-    # === Регистрируем команды в Telegram ===
     await bot.set_my_commands([
         types.BotCommand(command="help", description="Помощь / команды"),
         types.BotCommand(command="list", description="Показать список участников"),

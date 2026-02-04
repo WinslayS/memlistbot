@@ -9,16 +9,17 @@ from core import bot, dp
 from helpers import (
     admin_check,
     extract_users_from_message,
-    delete_command_later,
     make_silent_username,
     format_member_inline,
-    send_long_message
+    send_long_message,
+    auto_delete
 )
 
 MAX_USERS = 50
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$", re.I)
 
 @dp.message(Command(commands=["tmplist", "tmlist"], ignore_case=True))
+@auto_delete()
 async def cmd_tmplist(msg: types.Message):
 
     if not await admin_check(bot, msg):
@@ -66,8 +67,6 @@ async def cmd_tmplist(msg: types.Message):
                 parse_mode="HTML"
             )
             return
-
-    asyncio.create_task(delete_command_later(msg))
 
     users = extract_users_from_message(msg)
 
@@ -184,6 +183,7 @@ def count_active_tmplists(chat_id: int) -> int:
     return res.count or 0
 
 @dp.message(Command(commands=["tmplists"], ignore_case=True))
+@auto_delete()
 async def cmd_tmplists(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -221,6 +221,7 @@ async def cmd_tmplists(msg: types.Message):
     await msg.answer("\n".join(lines), parse_mode="HTML")
 
 @dp.message(Command(commands=["tmplist_show"], ignore_case=True))
+@auto_delete()
 async def cmd_tmplist_show(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -293,6 +294,7 @@ async def cmd_tmplist_show(msg: types.Message):
     )
 
 @dp.message(Command(commands=["tmplist_delete"], ignore_case=True))
+@auto_delete()
 async def cmd_tmplist_delete(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -327,6 +329,7 @@ async def cmd_tmplist_delete(msg: types.Message):
     )
 
 @dp.message(Command(commands=["tmplist_remove"], ignore_case=True))
+@auto_delete()
 async def cmd_tmplist_remove(msg: types.Message):
     if not await admin_check(bot, msg):
         return

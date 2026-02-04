@@ -13,10 +13,11 @@ from helpers import (
     admin_check,
     format_member_txt,
     get_target_user_from_reply,
-    delete_command_later
+    auto_delete
 )
 
 @dp.message(Command("setname"))
+@auto_delete()
 async def admin_set_name(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -49,7 +50,6 @@ async def admin_set_name(msg: types.Message):
         await msg.answer("❌ Имя не может быть пустым.")
         return
 
-    # гарантируем, что пользователь есть в БД
     await asyncio.to_thread(upsert_user, msg.chat.id, target_user)
 
     try:
@@ -70,9 +70,8 @@ async def admin_set_name(msg: types.Message):
         parse_mode="HTML"
     )
 
-    asyncio.create_task(delete_command_later(msg))
-
 @dp.message(Command("addrole"))
+@auto_delete()
 async def admin_add_role(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -125,9 +124,8 @@ async def admin_add_role(msg: types.Message):
         parse_mode="HTML"
     )
 
-    asyncio.create_task(delete_command_later(msg))
-
 @dp.message(Command("export"))
+@auto_delete()
 async def cmd_export(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -160,9 +158,8 @@ async def cmd_export(msg: types.Message):
 
     await msg.answer_document(file, caption="📄 Экспортирован список участников.")
 
-    asyncio.create_task(delete_command_later(msg))
-
 @dp.message(Command("cleanup"))
+@auto_delete()
 async def cmd_cleanup(msg: types.Message):
     if not await admin_check(bot, msg):
         return
@@ -218,8 +215,6 @@ async def cmd_cleanup(msg: types.Message):
         f"Обновлено: <b>{updated_users}</b>",
         parse_mode="HTML"
     )
-
-    asyncio.create_task(delete_command_later(msg))
 
     logger.info(
         "Cleanup finished: removed=%s updated=%s chat=%s",

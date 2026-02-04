@@ -5,12 +5,10 @@ from aiogram import types
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ============ DB HELPERS ============
 def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=None):
     if user.username == "GroupAnonymousBot" or (user.is_bot and user.id != chat_id):
         return
 
-    # === 1. SELECT ===
     try:
         res = (
             supabase.table("members")
@@ -29,7 +27,6 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
         logger.error("Supabase SELECT error: %s", e)
         row = None
 
-    # === 2. Если НЕТ записи — создаём ===
     if not row:
         payload = {
             "chat_id": chat_id,
@@ -47,7 +44,6 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
 
         return
 
-    # === 3. Если запись есть — обновляем только изменившиеся поля ===
     update_data = {}
     new_username = user.username or ""
     new_full_name = user.full_name or ""
@@ -58,7 +54,6 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
     if row.get("full_name") != new_full_name:
         update_data["full_name"] = new_full_name
 
-    # НЕ трогаем external_name, если None
     if external_name is not None:
         if external_name != (row.get("external_name") or ""):
             update_data["external_name"] = external_name
@@ -66,7 +61,6 @@ def upsert_user(chat_id: int, user: types.User, external_name=None, extra_role=N
     if extra_role is not None:
         update_data["extra_role"] = extra_role
 
-    # --- UPDATE с обработкой ошибок ---
     if not update_data:
         return
 

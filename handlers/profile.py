@@ -6,10 +6,12 @@ from aiogram.filters import Command
 from core import dp
 from logger import logger
 from db import supabase, upsert_user
-
-# ========== NAME ==========
+from helpers import (
+    auto_delete,
+)
 
 @dp.message(Command("name"))
+@auto_delete()
 async def cmd_name(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 
@@ -19,12 +21,10 @@ async def cmd_name(msg: types.Message):
 
     external_name = args[1].strip()
 
-    # пустое имя (только пробелы)
     if not external_name:
         await msg.answer("❌ Имя не может быть пустым или состоять только из пробелов.")
         return
 
-    # лимит длины 100 символов
     if len(external_name) > 100:
         await msg.answer("❌ Имя слишком длинное. Максимум 100 символов.")
         return
@@ -41,9 +41,8 @@ async def cmd_name(msg: types.Message):
         parse_mode="HTML"
     )
 
-# ========== ADD ==========
-
 @dp.message(Command("add"))
+@auto_delete()
 async def cmd_add(msg: types.Message):
     args = msg.text.split(maxsplit=1)
 

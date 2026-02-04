@@ -6,6 +6,7 @@ from aiogram import types
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from logger import logger
 from db import get_members, supabase
+from functools import wraps
 
 LAST_UPDATE: dict[int, float] = {}
 UPDATE_TTL = 10
@@ -246,6 +247,17 @@ async def delete_command_later(msg: types.Message, delay: int = 5):
         logger.debug("Failed to delete command message: %s", e)
 
 USERNAME_RE = re.compile(r'@([a-zA-Z0-9_]{5,32})')
+
+def auto_delete(delay: int = 5):
+    def decorator(handler):
+        @wraps(handler)
+        async def wrapper(msg: types.Message, *args, **kwargs):
+            try:
+                return await handler(msg, *args, **kwargs)
+            finally:
+                asyncio.create_task(delete_command_later(msg, delay))
+        return wrapper
+    return decorator
 
 def extract_users_from_message(msg: types.Message) -> list[types.User]:
     users: dict[int, types.User] = {}
