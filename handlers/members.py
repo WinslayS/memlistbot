@@ -59,7 +59,7 @@ def render_page(rows: list, page: int):
 
 @dp.callback_query(lambda c: c.data.startswith("list_page:"))
 async def list_pagination(callback: types.CallbackQuery):
-    page = int(callback.data.split(":")[1])
+    page = max(1, min(page, total_pages))
 
     rows = await asyncio.to_thread(get_members, callback.message.chat.id)
     total_pages = (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE

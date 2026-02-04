@@ -130,17 +130,4 @@ async def chat_member_events(event: types.ChatMemberUpdated):
         return
 
 async def send_welcome(event: types.ChatMemberUpdated, user: types.User):
-    chat_id = event.chat.id
-
-    text = (
-        f"👋 Привет, <b>{user.full_name}</b>!\n\n"
-        "Чтобы появиться в списке, используй:\n"
-        "• <code>/name ТвоёИмя</code>\n"
-        "• <code>/add Роль</code> (необязательно)\n\n"
-        "Если что-то непонятно — /help 🙂"
-    )
-
-    try:
-        await bot.send_message(chat_id, text, parse_mode="HTML")
-    except Exception as e:
-        logger.error("WELCOME ERROR: %s", e)
+    return
