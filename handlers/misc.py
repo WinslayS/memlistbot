@@ -206,7 +206,6 @@ async def cmd_web(msg: types.Message):
                 .insert({
                     "chat_id": chat_id,
                     "created_by": user_id,
-                    "created_at": datetime.utcnow(),
                     "is_active": True,
                 })
                 .execute()
