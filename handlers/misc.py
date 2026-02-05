@@ -3,6 +3,7 @@ import time
 
 from aiogram import types
 from aiogram.filters import Command
+from datetime import datetime
 
 from core import bot, dp
 from logger import logger
@@ -180,3 +181,47 @@ async def auto_register(msg: types.Message):
         )
     except Exception as e:
         logger.error("Auto-register update error: %s", e)
+
+@dp.message(Command("web"))
+@auto_delete()
+async def cmd_web(msg: types.Message):
+    chat_id = msg.chat.id
+    user_id = msg.from_user.id
+
+    try:
+        res = (
+            supabase.table("chat_links")
+            .select("id")
+            .eq("chat_id", chat_id)
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+
+        if res.data:
+            token = res.data[0]["id"]
+        else:
+            insert_res = (
+                supabase.table("chat_links")
+                .insert({
+                    "chat_id": chat_id,
+                    "created_by": user_id,
+                    "created_at": datetime.utcnow(),
+                    "is_active": True,
+                })
+                .execute()
+            )
+
+            token = insert_res.data[0]["id"]
+
+        url = f"https://memlist.vercel.app/chat/{token}"
+
+        await msg.answer(
+            "🌐 <b>Веб-версия списка:</b>\n"
+            f"{url}",
+            parse_mode="HTML"
+        )
+
+    except Exception as e:
+        logger.error("WEB COMMAND ERROR: %s", e)
+        await msg.answer("⚠ Не удалось создать веб-ссылку.")
