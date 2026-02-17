@@ -306,5 +306,3 @@ def extract_users_from_message(msg: types.Message) -> list[types.User]:
         )
 
     return list(users.values())
-
-
