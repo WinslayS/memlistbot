@@ -1,5 +1,3 @@
-import { supabase } from "@/lib/supabase";
-
 type Member = {
   id: number;
   username: string | null;
@@ -8,34 +6,33 @@ type Member = {
   extra_role: string | null;
 };
 
-export default async function ChatPage({
-  params,
-}: {
-  params: { token: string };
-}) {
-  const { data, error } = await supabase.rpc("members_for_token", {
-    p_token: params.token,
+type PageProps = {
+  params: Promise<{ token: string }>;
+};
+
+export default async function ChatPage({ params }: PageProps) {
+  const { token } = await params;
+
+  const res = await fetch(`http://localhost:3000/api/chat/${token}`, {
+    cache: "no-store",
   });
 
-  const members = data as Member[] | null;
+  const json = await res.json();
 
-  if (error) {
-    return (
-      <main style={{ padding: 40 }}>
-        <h1>Ошибка</h1>
-        <pre>{JSON.stringify(error, null, 2)}</pre>
-      </main>
-    );
+  if (!res.ok) {
+    return <pre>{JSON.stringify(json, null, 2)}</pre>;
   }
+
+  const members: Member[] = json.members ?? [];
 
   return (
     <main style={{ padding: 40 }}>
       <h1>Список участников</h1>
 
-      {members?.length === 0 && <p>Список пуст</p>}
+      {members.length === 0 && <p>Список пуст</p>}
 
       <ul>
-        {members?.map((m: Member, index: number) => (
+        {members.map((m, index) => (
           <li key={m.id}>
             {index + 1}. {m.external_name || m.full_name || "Без имени"}{" "}
             {m.username && `(@${m.username})`}{" "}
