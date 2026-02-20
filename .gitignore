@@ -34,3 +34,9 @@ Thumbs.db
 
 *.tsbuildinfo
 web/next-env.d.ts
+
+supabase/.branches
+supabase/.temp
+supabase/.env.keys
+supabase/.env.local
+supabase/.env.*.local
